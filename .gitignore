@@ -1,3 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Environment
 .env
-__pycache__
-upload_dir
+
+# Data (large files — don't commit)
+chroma_db/
+docs_store/
+logs/
+
+# Keep placeholder
+!chroma_db/.gitkeep
+!docs_store/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
