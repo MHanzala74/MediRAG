@@ -217,6 +217,3 @@ RAG-Medical-Assistant/
 
 ---
 
-<div align="center">
-Built with ❤️ for medical AI research · LangChain · FastAPI · ChromaDB
-</div>
