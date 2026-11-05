@@ -16,12 +16,12 @@ langchain-openai>=0.2.0
 langchain-groq>=0.2.0
 langchain-text-splitters>=0.3.0
 
+# ── NeMo Guardrails ───────────────────────────────────────────────────
+nemoguardrails==0.24.1
+
 # ── Vector store + embeddings ─────────────────────────────────────────
 chromadb>=0.5.0
 sentence-transformers>=3.0.0
-
-# ── Reranker ─────────────────────────────────────────────────────────
-# sentence-transformers already covers cross-encoder
 
 # ── Document parsing ──────────────────────────────────────────────────
 pypdf>=4.0.0
