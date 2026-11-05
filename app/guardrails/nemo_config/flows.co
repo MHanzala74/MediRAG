@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────────────
+#  Dialog flow definitions
+#  These define WHAT HAPPENS when a user intent is detected
+#  Colang v1 DSL — NeMo Guardrails
+# ─────────────────────────────────────────────────────────────────────
+
+# ── Core flows ────────────────────────────────────────────────────────
+
+define flow greeting
+  user express greeting
+  bot express greeting
+
+define flow answer medical
+  user ask medical question
+  bot answer medical question
+
+define flow capabilities
+  user ask about capabilities
+  bot inform capabilities
+
+define flow bot identity
+  user ask about bot identity
+  bot inform about identity
+
+# ── Safety flows — HIGHEST PRIORITY ──────────────────────────────────
+
+define flow handle crisis
+  user express crisis
+  bot respond to crisis
+
+define flow block dangerous requests
+  user ask dangerous question
+  bot refuse dangerous
+
+define flow block off-topic
+  user ask off-topic question
+  bot refuse off-topic
+
+define flow redirect diagnosis
+  user request personal diagnosis
+  bot respond to personal diagnosis request

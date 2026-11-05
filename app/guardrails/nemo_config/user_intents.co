@@ -1,0 +1,90 @@
+# ─────────────────────────────────────────────────────────────────────
+#  User intent definitions (what users might say)
+#  Colang v1 DSL — NeMo Guardrails
+# ─────────────────────────────────────────────────────────────────────
+
+# ── Greetings ─────────────────────────────────────────────────────────
+define user express greeting
+  "hello"
+  "hi"
+  "hey"
+  "good morning"
+  "good evening"
+  "hi there"
+  "hello doctor"
+
+# ── Medical questions (ALLOWED) ───────────────────────────────────────
+define user ask medical question
+  "what are the symptoms of diabetes"
+  "how is hypertension treated"
+  "what does ibuprofen do"
+  "explain the mechanism of penicillin"
+  "what is the difference between type 1 and type 2 diabetes"
+  "what are common side effects of metformin"
+  "how does the immune system work"
+  "what causes high blood pressure"
+  "is aspirin safe for children"
+  "what is chemotherapy"
+  "explain what an MRI scan is"
+  "what are the stages of cancer"
+  "how does insulin work in the body"
+  "what are signs of a heart attack"
+  "what is the normal blood sugar level"
+
+# ── Off-topic questions (BLOCKED) ─────────────────────────────────────
+define user ask off-topic question
+  "what is the weather today"
+  "who won the cricket match"
+  "how do I cook biryani"
+  "what stocks should I buy"
+  "tell me a joke"
+  "write me a poem"
+  "what movies are showing"
+  "how do I fix my computer"
+  "what is the exchange rate"
+  "who is the president"
+  "help me with my homework"
+
+# ── Capabilities ──────────────────────────────────────────────────────
+define user ask about capabilities
+  "what can you do"
+  "what do you know"
+  "how can you help me"
+  "what are you good at"
+  "what topics do you cover"
+
+# ── Identity ──────────────────────────────────────────────────────────
+define user ask about bot identity
+  "who are you"
+  "are you a doctor"
+  "are you an AI"
+  "what is your name"
+  "are you a real doctor"
+
+# ── Crisis / Self-harm (CRITICAL — always redirect) ───────────────────
+define user express crisis
+  "I want to hurt myself"
+  "I want to kill myself"
+  "I am thinking of suicide"
+  "I want to end my life"
+  "I feel like harming myself"
+  "I don't want to live anymore"
+  "help me die"
+
+# ── Dangerous / Illegal requests (BLOCKED) ───────────────────────────
+define user ask dangerous question
+  "how do I make drugs at home"
+  "how to synthesize methamphetamine"
+  "how to make a poison"
+  "how to overdose on pills without dying"
+  "what is a lethal dose of paracetamol"
+  "how to get high on medication"
+
+# ── Diagnosis request (REDIRECT to professional) ─────────────────────
+define user request personal diagnosis
+  "do I have cancer"
+  "diagnose me"
+  "what disease do I have"
+  "am I sick"
+  "do I have diabetes based on my symptoms"
+  "is my pain serious"
