@@ -202,18 +202,21 @@ def resolve_names(selection: list[str] | None) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def build_metrics(
+def build_named_metrics(
     model,
     selection: list[str] | None = None,
     threshold: float = 0.5,
     thresholds: dict[str, float] | None = None,
     async_mode: bool = True,
-) -> list:
-    """Instantiate the selected metrics with the given judge model."""
+) -> list[tuple[str, object]]:
+    """Instantiate the selected metrics -> [(registry_name, metric_instance), ...]."""
     thresholds = thresholds or {}
-    out = []
-    for name in resolve_names(selection):
-        spec = METRICS[name]
-        metric = spec.build(model, thresholds.get(name, threshold), async_mode)
-        out.append(metric)
-    return out
+    return [
+        (name, METRICS[name].build(model, thresholds.get(name, threshold), async_mode))
+        for name in resolve_names(selection)
+    ]
+
+
+def build_metrics(model, selection=None, threshold=0.5, thresholds=None, async_mode=True) -> list:
+    """Same as `build_named_metrics` but returns only the metric instances."""
+    return [m for _, m in build_named_metrics(model, selection, threshold, thresholds, async_mode)]
