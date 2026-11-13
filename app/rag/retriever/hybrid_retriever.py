@@ -33,6 +33,13 @@ def _rrf_fusion(semantic_docs: list[Document], keyword_docs: list[Document], k: 
     return [all_docs[key] for key, _ in ranked]
 
 
+def _role_filter(user_role: str) -> dict:
+    """Chroma metadata filter. Users see documents tagged for them; admins see all."""
+    if user_role == "admin":
+        return {"role": {"$in": ["user", "admin"]}}
+    return {"role": user_role}
+
+
 class HybridRetriever:
     """
     Combines ChromaDB semantic search with BM25 keyword search.
@@ -50,7 +57,7 @@ class HybridRetriever:
             semantic_docs = self._vectorstore.similarity_search(
                 query,
                 k=n,
-                filter={"role": user_role},
+                filter=_role_filter(user_role),
             )
             logger.debug("Semantic retrieval: %d docs", len(semantic_docs))
         except Exception as e:
