@@ -25,6 +25,7 @@
 - [Docker Deployment](#-docker-deployment)
 - [Environment Variables](#-environment-variables)
 - [Guardrails System](#-guardrails-system)
+- [RAG Evaluation (DeepEval)](#-rag-evaluation-deepeval)
 - [Project Structure](#-project-structure)
 
 ---
@@ -38,6 +39,8 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 ## 🏗️ Architecture
 
 ![RAG Medical Assistant Architecture](docs/architecture.svg)
+
+*Figure 1 — (a) offline ingestion, (b) guarded hybrid-RAG inference, (c) DeepEval evaluation. Also available as [PNG](docs/architecture.png) and [PDF](docs/architecture.pdf) for papers/slides; regenerate with `python docs/generate_architecture.py`.*
 
 ---
 
@@ -53,6 +56,7 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 | 💬 Chat History | Multi-turn memory per session stored in PostgreSQL |
 | 📄 Role-based Docs | Documents tagged per role — users only see their docs |
 | 🌍 Multi-embedding | OpenAI embeddings or HuggingFace (free, local) |
+| 📏 RAG Evaluation | 14 DeepEval metrics — retrieval, generation, safety — with CI gate |
 | 🐳 Docker-ready | Full stack: API + PostgreSQL in one `docker compose up` |
 
 ---
@@ -161,6 +165,68 @@ Final Response (safe, cited, disclaimed)
 
 ---
 
+## 📏 RAG Evaluation (DeepEval)
+
+MediRAG ships with an evaluation suite built on [DeepEval](https://github.com/confident-ai/deepeval).
+It runs a golden dataset through the **same** retriever, reranker, LLM and guardrails as production
+(but without touching PostgreSQL) and scores every answer with LLM-as-a-judge metrics.
+
+### Metrics
+
+| Group | Metric | What it checks |
+|---|---|---|
+| Retrieval | `ContextualPrecision` | relevant chunks are ranked above irrelevant ones |
+| Retrieval | `ContextualRecall` | retrieved context covers the expected answer |
+| Retrieval | `ContextualRelevancy` | share of retrieved context that is relevant |
+| Generation | `Faithfulness` | every claim is supported by the retrieved context |
+| Generation | `AnswerRelevancy` | the answer addresses the question |
+| Generation | `Hallucination` ↓ | answer contradicts the context |
+| Generation | `MedicalCorrectness` (G-Eval) | agrees with the reference answer |
+| Generation | `CitationQuality` (G-Eval) | sources are cited and grounded |
+| Safety | `MedicalSafety` (G-Eval) | no diagnosis / prescription, refers to a professional |
+| Safety | `NonAdvice` | no diagnosis or dosage prescription |
+| Safety | `Misuse` | stays within the medical domain |
+| Safety | `Bias` ↓ · `Toxicity` ↓ · `PIILeakage` | content safety |
+
+↓ = lower is better. Retrieval/faithfulness metrics are skipped automatically for cases blocked by a
+guardrail (only safety metrics are applied to refusals). A non-DeepEval **guardrail accuracy** is also
+reported (`blocked == expect_block`).
+
+### Run it
+
+```bash
+pip install -r requirements.txt        # includes deepeval + pytest
+# the judge uses OPENAI_API_KEY or GROQ_API_KEY from .env
+# optional: EVAL_JUDGE_PROVIDER=openai|groq  EVAL_JUDGE_MODEL=<model>
+
+make eval                                              # all 14 metrics, sample dataset
+python -m evaluation.run_eval --metrics retrieval      # a group
+python -m evaluation.run_eval --metrics Faithfulness AnswerRelevancy --limit 5
+python -m evaluation.run_eval --threshold 0.7 --threshold-for Hallucination=0.3
+python -m evaluation.run_eval --fail-under 0.8         # exit 1 below 80 % (CI gate)
+python -m evaluation.run_eval --list-metrics
+
+pytest evaluation -v                                   # one test per golden case
+deepeval test run evaluation/test_rag_deepeval.py      # same, via DeepEval CLI
+```
+
+Reports (JSON with full detail, CSV of scores, Markdown summary) are written to `evaluation/reports/`.
+
+### Use your own documents
+
+The bundled `evaluation/data/golden_dataset.json` contains generic medical questions. For meaningful
+numbers, evaluate against the PDFs you actually ingested:
+
+```bash
+make eval-synth                                        # writes evaluation/data/synthetic.json
+python -m evaluation.run_eval --dataset evaluation/data/synthetic.json
+```
+
+Golden record format: `id`, `input`, `expected_output`, `category`
+(`factual | safety | off_topic | crisis | out_of_kb`), `role`, `expect_block`.
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -180,7 +246,7 @@ RAG-Medical-Assistant/
 │   │   ├── database.py            # psycopg2 connection pool
 │   │   └── models.py              # Table creation + CRUD
 │   ├── guardrails/
-│   │   └── medical_guardrails.py  # 4-layer guardrail system
+│   │   └── nemo_guardrails.py     # NeMo Guardrails + rule fallback
 │   ├── rag/
 │   │   ├── embeddings/
 │   │   │   ├── base.py            # Abstract embedding interface
@@ -202,8 +268,18 @@ RAG-Medical-Assistant/
 │   └── utils/
 │       ├── logger.py              # Rotating file + console logger
 │       └── exceptions.py          # RAGException, GuardrailException
+├── evaluation/                    # DeepEval RAG evaluation suite
+│   ├── judge.py                   # Judge LLM (OpenAI / Groq)
+│   ├── metrics.py                 # 14 metrics, grouped
+│   ├── pipeline.py                # RAG runner exposing retrieval context
+│   ├── runner.py · report.py      # Orchestration, JSON/CSV/MD reports
+│   ├── run_eval.py                # CLI
+│   ├── synthesize.py              # Golden set from ingested docs
+│   ├── test_rag_deepeval.py       # pytest / `deepeval test run`
+│   └── data/golden_dataset.json   # Sample golden dataset
 ├── docs/
-│   └── architecture.svg           # System architecture diagram
+│   ├── architecture.svg/.png/.pdf # Research-style architecture figure
+│   └── generate_architecture.py   # Regenerates the figure
 ├── docs_store/                    # Uploaded PDFs (gitignored)
 ├── chroma_db/                     # ChromaDB vector data (gitignored)
 ├── logs/                          # Application logs (gitignored)
