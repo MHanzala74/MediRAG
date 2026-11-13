@@ -35,17 +35,26 @@ class PipelineResult:
     block_reason: str = ""
 
 
-async def run_pipeline(query: str, user_role: str = "user", use_guardrails: bool | None = None) -> PipelineResult:
+async def run_pipeline(
+    query: str,
+    user_role: str = "user",
+    use_guardrails: bool | None = None,
+    guardrails=None,
+) -> PipelineResult:
+    """`guardrails`: optional NeMoGuardrailsManager. Evaluation jobs run in their own
+    thread/event loop and pass a private instance so NeMo's async clients are never
+    shared across event loops."""
     from langchain_core.output_parsers import StrOutputParser
 
     from app.core.config import settings
-    from app.guardrails.nemo_guardrails import nemo_guardrails
+    from app.guardrails.nemo_guardrails import nemo_guardrails as _global_guardrails
     from app.rag.chain import _build_prompt
     from app.rag.llm_router import get_llm
     from app.rag.reranker.cross_encoder import reranker
     from app.rag.retriever.hybrid_retriever import HybridRetriever
     from app.rag.vectorstore import get_vectorstore
 
+    nemo_guardrails = guardrails or _global_guardrails
     guards = settings.enable_guardrails if use_guardrails is None else use_guardrails
     t0 = time.perf_counter()
     method = "hybrid" if settings.use_hybrid_search else "semantic"
