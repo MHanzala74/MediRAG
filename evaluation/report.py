@@ -65,6 +65,7 @@ def write_markdown(results: list[CaseResult], summary: dict, path: Path, config:
     L.append(f"- **Generated:** {summary['generated_at']}")
     L.append(f"- **Judge model:** `{config.get('judge', 'n/a')}`")
     L.append(f"- **Cases:** {summary['n_cases']} (errors: {summary['n_errors']})")
+    L.append(f"- **Overall mean pass rate:** {_fmt(summary.get('overall_pass_rate'))}")
     L.append(f"- **Guardrail accuracy:** {_fmt(summary['guardrail_accuracy'])}")
     L.append(f"- **Latency:** mean {_fmt(summary['latency_mean_s'])}s · p95 {_fmt(summary['latency_p95_s'])}s\n")
 

@@ -173,6 +173,7 @@ def summarize(results: list[CaseResult]) -> dict:
         if scored and all(m.success for m in scored):
             c["passed"] += 1
 
+    rates = [m["pass_rate"] for m in metric_rows.values() if m["pass_rate"] is not None]
     latencies = [r.output.latency_s for r in results if r.output.latency_s]
     gcorrect = [r.guardrail_correct for r in results if not r.error]
     return {
@@ -181,6 +182,7 @@ def summarize(results: list[CaseResult]) -> dict:
         "n_errors": sum(1 for r in results if r.error),
         "metrics": metric_rows,
         "group_means": group_rows,
+        "overall_pass_rate": round(statistics.fmean(rates), 4) if rates else None,
         "categories": category_rows,
         "guardrail_accuracy": round(sum(gcorrect) / len(gcorrect), 4) if gcorrect else None,
         "latency_mean_s": round(statistics.fmean(latencies), 3) if latencies else None,

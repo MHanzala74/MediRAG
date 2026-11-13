@@ -34,7 +34,8 @@ Passage (from "{source}"):
 """
 
 
-def synthesize_from_chunks(chunks: list[dict], judge, n: int, seed: int = 42, min_chars: int = 200) -> list[Golden]:
+def synthesize_from_chunks(chunks: list[dict], judge, n: int, seed: int = 42, min_chars: int = 200,
+                           on_progress=None) -> list[Golden]:
     """chunks: [{"text": str, "source": str, "role": str}, ...]"""
     pool = [c for c in chunks if len(c["text"]) >= min_chars]
     random.Random(seed).shuffle(pool)
@@ -55,6 +56,8 @@ def synthesize_from_chunks(chunks: list[dict], judge, n: int, seed: int = 42, mi
             role=c.get("role", "user"),
             metadata={"source": c["source"]},
         ))
+        if on_progress:
+            on_progress(len(goldens), n)
     return goldens
 
 
