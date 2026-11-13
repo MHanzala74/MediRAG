@@ -22,3 +22,7 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Evaluation outputs
+evaluation/reports/*
+!evaluation/reports/.gitkeep
