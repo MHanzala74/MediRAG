@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     jwt_secret_key: str     = "change-me-in-production"
     jwt_algorithm: str      = "HS256"
     jwt_expire_minutes: int = 60
+    # Admin accounts can upload documents and run (paid) evaluations. If set, admin
+    # signup requires this code. If empty: allowed in development, refused in production.
+    admin_signup_code: str  = ""
 
     # ── LLM ──────────────────────────────────────────────────────────
     openai_api_key: str  = ""

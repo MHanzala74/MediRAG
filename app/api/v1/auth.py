@@ -1,10 +1,12 @@
 """Auth endpoints — signup, login (JWT)."""
+import hmac
 from fastapi import APIRouter, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import Depends
 from app.schemas.auth import SignupRequest, TokenResponse
 from app.core.security import hash_password, verify_password, create_access_token
 from app.db.models import get_user, insert_user
+from app.core.config import settings
 from app.utils.logger import logger
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -12,6 +14,18 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/signup", status_code=201, summary="Register a new user")
 def signup(req: SignupRequest):
+    if req.role == "admin":
+        code = settings.admin_signup_code
+        if code:
+            if not hmac.compare_digest((req.admin_code or "").encode(), code.encode()):
+                raise HTTPException(status_code=403, detail="Invalid admin signup code")
+        elif settings.is_production:
+            raise HTTPException(
+                status_code=403,
+                detail="Admin signup is disabled. Set ADMIN_SIGNUP_CODE to create admin accounts.",
+            )
+        else:
+            logger.warning("Admin account created without ADMIN_SIGNUP_CODE (development mode)")
     if get_user(req.username):
         raise HTTPException(status_code=400, detail="Username already exists")
     insert_user(req.username, hash_password(req.password), req.role)
