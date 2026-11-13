@@ -166,6 +166,24 @@ METRICS: dict[str, MetricSpec] = {
 }
 
 
+# Test-case fields each metric needs. A metric is skipped for a case when any
+# required field is empty (e.g. no retrieval context because a guardrail fired).
+REQUIRES: dict[str, tuple[str, ...]] = {
+    "ContextualPrecision": ("retrieval_context", "expected_output"),
+    "ContextualRecall": ("retrieval_context", "expected_output"),
+    "ContextualRelevancy": ("retrieval_context",),
+    "Faithfulness": ("retrieval_context",),
+    "Hallucination": ("context",),
+    "MedicalCorrectness": ("expected_output",),
+    "CitationQuality": ("retrieval_context",),
+}
+
+
+def missing_fields(name: str, test_case) -> list[str]:
+    """Return the required fields that are empty on `test_case` for metric `name`."""
+    return [f for f in REQUIRES.get(name, ()) if not getattr(test_case, f, None)]
+
+
 def resolve_names(selection: list[str] | None) -> list[str]:
     """Expand a CLI selection (metric names and/or group names / 'all')."""
     if not selection or "all" in selection:
