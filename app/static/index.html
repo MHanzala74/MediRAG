@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediRAG — Medical Assistant</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%95%EF%B8%8F%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ───────── Auth ───────── -->
+  <div id="auth-view" class="auth-wrap" hidden>
+    <div class="card auth-card">
+      <div class="brand big"><span class="logo">⚕</span> MediRAG</div>
+      <p class="muted center">Guarded, document-grounded medical assistant</p>
+      <div class="seg" role="tablist">
+        <button id="seg-login" class="active" type="button">Log in</button>
+        <button id="seg-signup" type="button">Sign up</button>
+      </div>
+      <div class="stack" id="auth-form">
+        <label>Username <input id="auth-user" autocomplete="username" minlength="3" maxlength="50"></label>
+        <label>Password <input id="auth-pass" type="password" autocomplete="current-password" minlength="8" maxlength="100"></label>
+        <div id="signup-extra" hidden class="stack">
+          <label>Account type
+            <select id="auth-role">
+              <option value="user">User — ask questions</option>
+              <option value="admin">Admin — upload documents &amp; run evaluations</option>
+            </select>
+          </label>
+          <label id="admin-code-wrap" hidden>Admin signup code
+            <input id="auth-code" type="password" autocomplete="off">
+            <span class="hint">Ask the system owner (ADMIN_SIGNUP_CODE).</span>
+          </label>
+        </div>
+        <div id="auth-error" class="alert bad" role="alert" hidden></div>
+        <button id="auth-submit" class="btn primary" type="button">Log in</button>
+      </div>
+      <p class="muted small center">Educational tool — not a substitute for professional medical advice.</p>
+    </div>
+  </div>
+
+  <!-- ───────── App ───────── -->
+  <div id="app-view" hidden>
+    <header class="topbar">
+      <div class="brand"><span class="logo">⚕</span> MediRAG</div>
+      <nav class="tabs" id="tabs">
+        <button data-tab="chat" class="active" type="button">Chat</button>
+        <button data-tab="docs" type="button">Documents</button>
+        <button data-tab="eval" id="tab-eval-btn" type="button" hidden>Evaluation</button>
+      </nav>
+      <div class="right">
+        <span id="health-badge" class="badge" title="">…</span>
+        <span id="user-chip" class="chip"></span>
+        <button id="logout" class="btn ghost" type="button">Log out</button>
+      </div>
+    </header>
+
+    <!-- Chat -->
+    <main id="tab-chat" class="tab chat-layout">
+      <aside class="sessions card">
+        <button id="new-chat" class="btn primary block" type="button">＋ New chat</button>
+        <ul id="session-list" class="session-list"></ul>
+      </aside>
+      <section class="chat card">
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div class="composer">
+          <textarea id="chat-input" rows="2" maxlength="1000" placeholder="Ask a medical question… (Enter to send, Shift+Enter for a new line)"></textarea>
+          <button id="chat-send" class="btn primary" type="button">Send</button>
+        </div>
+        <div class="small muted composer-hint"><span id="char-count">0</span>/1000 · Answers use only the uploaded documents you have access to.</div>
+      </section>
+    </main>
+
+    <!-- Documents -->
+    <main id="tab-docs" class="tab" hidden>
+      <div class="grid-2">
+        <section class="card" id="upload-card">
+          <h2>Upload a document</h2>
+          <div class="stack">
+            <label>PDF file <input id="doc-file" type="file" accept="application/pdf,.pdf"></label>
+            <label>Who can use it?
+              <select id="doc-role">
+                <option value="user">Everyone — users and admins</option>
+                <option value="admin">Admins only</option>
+              </select>
+            </label>
+            <button id="doc-upload" class="btn primary" type="button">Upload &amp; index</button>
+            <div id="upload-status" class="small muted" aria-live="polite"></div>
+          </div>
+        </section>
+        <section class="card" id="upload-note" hidden>
+          <h2>Documents</h2>
+          <p class="muted">Only admins can upload documents. Your questions are answered from the documents listed here.</p>
+        </section>
+        <section class="card wide">
+          <div class="row between"><h2>Indexed documents</h2><button id="docs-refresh" class="btn ghost" type="button">Refresh</button></div>
+          <div class="table-wrap"><table id="docs-table"><thead><tr><th>File</th><th>Access</th><th>Chunks</th><th>Uploaded by</th><th>When</th></tr></thead><tbody></tbody></table></div>
+          <p id="docs-empty" class="muted" hidden>No documents yet.</p>
+        </section>
+      </div>
+    </main>
+
+    <!-- Evaluation -->
+    <main id="tab-eval" class="tab" hidden>
+      <div class="grid-eval">
+        <section class="card">
+          <div class="row between"><h2>Run an evaluation</h2><span id="judge-badge" class="badge"></span></div>
+          <div class="stack">
+            <label>Test set
+              <select id="ev-dataset"></select>
+            </label>
+            <div class="row gap">
+              <input id="ev-synth-n" type="number" min="1" max="100" value="15" class="narrow" aria-label="Number of questions">
+              <button id="ev-synth" class="btn" type="button">Generate test set from my documents</button>
+            </div>
+            <fieldset><legend>Metrics</legend><div id="ev-metrics"></div></fieldset>
+            <div class="row gap wrap">
+              <label class="inline">Cases (blank = all) <input id="ev-limit" type="number" min="1" class="narrow"></label>
+              <label class="inline">Pass threshold <input id="ev-threshold" type="number" min="0" max="1" step="0.05" value="0.5" class="narrow"></label>
+            </div>
+            <label class="check"><input id="ev-guard" type="checkbox" checked> Use guardrails (as in production)</label>
+            <label class="check"><input id="ev-raw" type="checkbox"> Score the raw LLM answer (before the disclaimer is added)</label>
+            <button id="ev-run" class="btn primary" type="button">Run evaluation</button>
+            <div id="ev-job" class="job" hidden aria-live="polite">
+              <div class="small" id="ev-job-text"></div>
+              <div class="progress"><div id="ev-job-bar"></div></div>
+            </div>
+            <div id="ev-error" class="alert bad" hidden role="alert"></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="row between"><h2>Past runs</h2><button id="ev-reload" class="btn ghost" type="button">Refresh</button></div>
+          <div id="ev-runs" class="runs"></div>
+        </section>
+
+        <section id="ev-report" class="wide" hidden></section>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

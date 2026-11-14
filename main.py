@@ -7,7 +7,9 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from app.core.config import settings
 from app.utils.logger import logger
@@ -90,12 +92,19 @@ async def global_handler(request: Request, exc: Exception):
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
-@app.get("/", tags=["Root"])
-def root():
+# Web UI (chat, documents, evaluation dashboard) — plain static files, no build step.
+app.mount("/ui", StaticFiles(directory=Path(__file__).parent / "app" / "static", html=True), name="ui")
+
+
+@app.get("/", tags=["Root"], include_in_schema=False)
+def root(request: Request):
+    if "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse("/ui/")          # browsers land on the UI
     return {
         "name":        settings.app_name,
         "version":     settings.app_version,
         "environment": settings.app_env,
+        "ui":          "/ui/",
         "docs":        "/docs",
         "health":      f"{settings.api_prefix}/health",
     }
