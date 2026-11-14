@@ -26,3 +26,6 @@ Thumbs.db
 # Evaluation outputs
 evaluation/reports/*
 !evaluation/reports/.gitkeep
+
+# UI test deps
+node_modules/
