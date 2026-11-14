@@ -9,6 +9,13 @@ from app.core.config import settings
 from app.utils.logger import logger
 
 
+def provider_name() -> str:
+    """Which provider get_llm() will use (same decision rule)."""
+    if settings.primary_llm == "openai" and settings.openai_api_key:
+        return "openai"
+    return "groq"
+
+
 @lru_cache
 def get_llm() -> BaseChatModel:
     if settings.primary_llm == "openai" and settings.openai_api_key:

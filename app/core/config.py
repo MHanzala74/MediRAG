@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # ── LLM ──────────────────────────────────────────────────────────
     openai_api_key: str  = ""
     groq_api_key: str    = ""
+    # Optional flat price override (USD per 1M tokens) used for the dashboard's cost ESTIMATE.
+    llm_price_input_per_1m:  float | None = None
+    llm_price_output_per_1m: float | None = None
     primary_llm: Literal["openai", "groq"] = "openai"
     openai_model: str    = "gpt-4o-mini"
     groq_model: str      = "llama-3.3-70b-versatile"

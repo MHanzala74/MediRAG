@@ -48,6 +48,36 @@ def create_tables():
                 created_at  TIMESTAMP DEFAULT NOW()
             );
         """)
+        # ── migrations for existing databases ─────────────────────────
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active  BOOLEAN NOT NULL DEFAULT TRUE;")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;")
+        # a chat session belongs to exactly one user (see claim_session)
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_chat_sessions_session_id ON chat_sessions(session_id);")
+        # ── per-request usage log (metadata only — never the question/answer text) ──
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS usage_logs (
+                id                BIGSERIAL PRIMARY KEY,
+                created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                username          VARCHAR(100) NOT NULL,
+                role              VARCHAR(50),
+                session_id        VARCHAR(100),
+                status            VARCHAR(20) NOT NULL,      -- ok | blocked | error
+                provider          VARCHAR(30),
+                model             VARCHAR(100),
+                prompt_tokens     INT NOT NULL DEFAULT 0,
+                completion_tokens INT NOT NULL DEFAULT 0,
+                total_tokens      INT NOT NULL DEFAULT 0,
+                tokens_estimated  BOOLEAN NOT NULL DEFAULT FALSE,
+                cost_usd          NUMERIC(12,6),             -- estimate at request time; NULL = unknown model
+                latency_ms        INT,
+                retrieval_method  VARCHAR(20),
+                sources_count     INT NOT NULL DEFAULT 0,
+                query_chars       INT NOT NULL DEFAULT 0,
+                answer_chars      INT NOT NULL DEFAULT 0
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_usage_created  ON usage_logs(created_at);")
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_usage_user_time ON usage_logs(username, created_at);")
         conn.commit()
         cur.close()
         logger.info("DB tables verified/created ✅")
@@ -66,12 +96,12 @@ def get_user(username: str) -> dict | None:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT username, password, role FROM users WHERE username = %s",
+            "SELECT username, password, role, is_active FROM users WHERE username = %s",
             (username,)
         )
         row = cur.fetchone()
         cur.close()
-        return {"username": row[0], "password": row[1], "role": row[2]} if row else None
+        return {"username": row[0], "password": row[1], "role": row[2], "is_active": row[3]} if row else None
     finally:
         release_connection(conn)
 
@@ -89,6 +119,77 @@ def insert_user(username: str, hashed_pw: str, role: str):
     except Exception as e:
         conn.rollback()
         raise
+    finally:
+        release_connection(conn)
+
+
+def get_user_account(username: str) -> dict | None:
+    """Current role + active flag straight from the DB (used on every authenticated request)."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT username, role, is_active FROM users WHERE username = %s", (username,))
+        row = cur.fetchone()
+        cur.close()
+        return {"username": row[0], "role": row[1], "is_active": row[2]} if row else None
+    finally:
+        release_connection(conn)
+
+
+def touch_last_login(username: str):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET last_login = NOW() WHERE username = %s", (username,))
+        conn.commit()
+        cur.close()
+    finally:
+        release_connection(conn)
+
+
+def set_user_active(username: str, active: bool) -> bool:
+    """Enable / disable an account. Returns False if the user does not exist."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET is_active = %s WHERE username = %s", (active, username))
+        updated = cur.rowcount > 0
+        conn.commit()
+        cur.close()
+        return updated
+    finally:
+        release_connection(conn)
+
+
+# ── Chat session ownership ────────────────────────────────────────────
+
+def claim_session(session_id: str, username: str, role: str) -> bool:
+    """Bind a session to its first user. True if `username` owns it, False if someone else does."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO chat_sessions (username, session_id, role) VALUES (%s, %s, %s) "
+            "ON CONFLICT (session_id) DO NOTHING",
+            (username, session_id, role),
+        )
+        cur.execute("SELECT username FROM chat_sessions WHERE session_id = %s", (session_id,))
+        owner = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        return owner == username
+    finally:
+        release_connection(conn)
+
+
+def session_owner(session_id: str) -> str | None:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT username FROM chat_sessions WHERE session_id = %s", (session_id,))
+        row = cur.fetchone()
+        cur.close()
+        return row[0] if row else None
     finally:
         release_connection(conn)
 
