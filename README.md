@@ -22,6 +22,7 @@
 - [Key Features](#-key-features)
 - [API Endpoints](#-api-endpoints)
 - [Quick Start](#-quick-start)
+- [How to Use MediRAG (end-to-end)](#-how-to-use-medirag-end-to-end)
 - [Docker Deployment](#-docker-deployment)
 - [Environment Variables](#-environment-variables)
 - [Guardrails System](#-guardrails-system)
@@ -65,7 +66,8 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| `GET` | `/` | — | API info |
+| `GET` | `/ui/` | — | **Web UI** (chat · documents · evaluation dashboard) |
+| `GET` | `/` | — | API info (browsers are redirected to the UI) |
 | `GET` | `/api/v1/health` | — | Health + feature flags |
 | `POST` | `/api/v1/auth/signup` | — | Register user |
 | `POST` | `/api/v1/auth/login` | — | Login → JWT token |
@@ -73,6 +75,13 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 | `GET` | `/api/v1/documents/list` | User | List accessible docs |
 | `POST` | `/api/v1/chat/query` | User | Ask a medical question |
 | `GET` | `/api/v1/chat/history/{session_id}` | User | Get chat history |
+| `GET` | `/api/v1/evaluation/options` | Admin | Metrics, datasets, judge status |
+| `POST` | `/api/v1/evaluation/run` | Admin | Start a DeepEval run (background job) |
+| `POST` | `/api/v1/evaluation/datasets/synthesize` | Admin | Generate a test set from indexed documents |
+| `GET` | `/api/v1/evaluation/jobs/{id}` | Admin | Poll job progress |
+| `GET` | `/api/v1/evaluation/reports` · `/reports/{id}` | Admin | List / fetch results |
+| `GET` | `/api/v1/evaluation/reports/{id}/download?format=md\|csv\|json` | Admin | Download a report |
+| `DELETE` | `/api/v1/evaluation/reports/{id}` | Admin | Delete a report |
 
 ---
 
@@ -84,8 +93,8 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 - API keys: [OpenAI](https://platform.openai.com/api-keys) or [Groq](https://console.groq.com)
 
 ```bash
-git clone https://github.com/MHanzala74/RAG-Medical-Assistant.git
-cd RAG-Medical-Assistant
+git clone https://github.com/MHanzala74/MediRAG.git
+cd MediRAG
 
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
@@ -95,7 +104,96 @@ cp .env.example .env   # Fill in your API keys
 make dev               # Start with auto-reload
 ```
 
-API at **http://localhost:8000** · Docs at **http://localhost:8000/docs**
+Web UI at **http://localhost:8000** (redirects to `/ui/`) · API docs at **http://localhost:8000/docs**
+
+---
+
+## 🧭 How to Use MediRAG (end-to-end)
+
+### 1 · One-time setup (whoever runs the server)
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+
+| Setting | What to put |
+|---|---|
+| `OPENAI_API_KEY` **or** `GROQ_API_KEY` | at least one LLM key |
+| `EMBEDDING_PROVIDER` | `openai` (needs `OPENAI_API_KEY`) — or `huggingface` if you only have a Groq key |
+| `JWT_SECRET_KEY` | long random string: `openssl rand -hex 32` |
+| `POSTGRES_PASSWORD` | any strong password |
+| `ADMIN_SIGNUP_CODE` | a secret code only admins know |
+
+```bash
+docker compose up --build      # API + PostgreSQL     (or: make dev, with your own PostgreSQL)
+```
+
+Open **http://localhost:8000**. The first start is slower: PostgreSQL tables are created and, with
+`huggingface` embeddings / the reranker enabled, models are downloaded once.
+
+### 2 · Admin workflow (prepare the knowledge base, then measure quality)
+
+1. **Sign up** → *Sign up* tab → *Account type: Admin* → enter the **admin signup code** → *Create account*.
+2. **Documents tab → Upload a document.** Pick a PDF and who may use it:
+   *Everyone* (users **and** admins can retrieve it) or *Admins only*. It is parsed, chunked and indexed.
+3. **Chat tab** — ask a few questions to sanity-check the answers and the cited sources.
+4. **Evaluation tab** (admin only):
+   1. Click **Generate test set from my documents** (the judge LLM writes a question + reference answer per sampled chunk). The bundled `golden_dataset.json` is generic and will score poorly on *your* documents.
+   2. Choose the metrics (all 14 by default), optionally limit the number of cases (start with 5–10), and press **Run evaluation**. A progress bar follows the job; the page stays usable.
+   3. Read the dashboard (see below). Download **MD / CSV / JSON** for reports or papers.
+
+### 3 · Normal user workflow
+
+1. **Sign up** as *User* (no code needed) and log in.
+2. **Chat tab** → type a medical question (or click an example). You get:
+   - an answer built **only from the documents you have access to**, ending with a medical disclaimer;
+   - **source chips** — click one to see the passage that was used;
+   - a refusal bubble (yellow) if the safety guardrails block the request (off-topic, harmful, crisis…).
+3. **New chat** starts a fresh conversation; earlier chats stay in the sidebar of that browser.
+   Sessions last `JWT_EXPIRE_MINUTES` (default 60), then you are asked to log in again.
+
+| | User | Admin |
+|---|:-:|:-:|
+| Chat, sources, history | ✅ | ✅ |
+| Retrieves documents tagged *Everyone* | ✅ | ✅ |
+| Retrieves documents tagged *Admins only* | ❌ | ✅ |
+| Upload documents | ❌ | ✅ |
+| Evaluation tab / `/evaluation/*` API | ❌ | ✅ |
+
+### 4 · Reading the evaluation dashboard
+
+- **Bars** show each metric's mean score (0–1); the black tick is the pass threshold. **↓** metrics
+  (Hallucination, Bias, Toxicity) are *lower-is-better*. Colour follows the **pass rate** (green ≥ 80 %, amber ≥ 50 %).
+- **Retrieval low** (Contextual Precision/Recall/Relevancy) → the right passages are not being found: tune
+  `CHUNK_SIZE`, `RETRIEVER_K`, `RERANKER_TOP_N`, or the embedding model.
+- **Retrieval fine but Faithfulness / Hallucination bad** → the LLM is adding things not in the context: tighten the prompt or switch model.
+- **Safety low** → check *Failed metrics* and the case explorer (click a row to see the question, answer, retrieved chunks and every metric's reason).
+- **Guardrail accuracy** = share of cases where the guardrail blocked exactly what the dataset says it should.
+- Every case makes several judge-LLM calls, so a run **costs API tokens** and takes minutes. Set `EVAL_JUDGE_MODEL` to a stronger model for more reliable judging. Only one run can be active at a time; finished reports are kept in `evaluation/reports/`.
+
+### 5 · Using the API directly (optional)
+
+```bash
+BASE=http://localhost:8000/api/v1
+curl -X POST $BASE/auth/signup -H 'Content-Type: application/json' \
+     -d '{"username":"alice","password":"strong-pass-123","role":"user"}'
+TOKEN=$(curl -s -X POST $BASE/auth/login -d 'username=alice&password=strong-pass-123' | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+
+curl -X POST $BASE/chat/query -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"message":"What are the symptoms of diabetes?","session_id":"demo-1"}'
+```
+
+Admin-only calls (`/documents/upload`, `/evaluation/run`, …) need an admin token — see the interactive docs at `/docs`.
+
+### 6 · Good to know
+
+- This is an **educational tool, not medical advice**; answers are limited to your uploaded documents.
+- Evaluation test cases run with the dataset's `role` (default `user`), so only documents tagged *Everyone* are evaluated.
+- Evaluation job *status* lives in memory (lost on restart); finished *reports* are files and persist.
+- Hybrid retrieval re-scores the dense (ChromaDB) candidates with BM25 and fuses both rankings with RRF; BM25 does not search the whole corpus independently.
+- Known limitation: `GET /chat/history/{session_id}` does not check that the session belongs to the caller — session ids are random UUIDs, but treat them as secrets.
 
 ---
 
@@ -118,6 +216,7 @@ docker compose down              # Stop
 | `GROQ_API_KEY` | ✅* | — | Groq key (fallback LLM) |
 | `JWT_SECRET_KEY` | ✅ | — | Secret for JWT signing |
 | `POSTGRES_PASSWORD` | ✅ | — | PostgreSQL password |
+| `ADMIN_SIGNUP_CODE` | ✅ (prod) | — | Code required to sign up as admin. Empty = admin signup allowed in development, **disabled** in production |
 | `PRIMARY_LLM` | ⬜ | `openai` | `openai` or `groq` |
 | `EMBEDDING_PROVIDER` | ⬜ | `openai` | `openai` or `huggingface` |
 | `USE_HYBRID_SEARCH` | ⬜ | `true` | Enable BM25 + semantic fusion |
@@ -125,6 +224,8 @@ docker compose down              # Stop
 | `ENABLE_GUARDRAILS` | ⬜ | `true` | Enable 4-layer guardrails |
 | `RETRIEVER_K` | ⬜ | `6` | Docs to retrieve before rerank |
 | `RERANKER_TOP_N` | ⬜ | `3` | Docs sent to LLM after rerank |
+| `EVAL_JUDGE_PROVIDER` | ⬜ | = `PRIMARY_LLM` | Judge LLM for evaluation: `openai` or `groq` |
+| `EVAL_JUDGE_MODEL` | ⬜ | provider default | Use a stronger model for more reliable scores |
 
 ---
 
@@ -268,11 +369,14 @@ RAG-Medical-Assistant/
 │   └── utils/
 │       ├── logger.py              # Rotating file + console logger
 │       └── exceptions.py          # RAGException, GuardrailException
+├── app/static/                    # Web UI (index.html, app.js, style.css — no build step)
+├── tests/ui/                      # jsdom end-to-end UI test + stub server
 ├── evaluation/                    # DeepEval RAG evaluation suite
 │   ├── judge.py                   # Judge LLM (OpenAI / Groq)
 │   ├── metrics.py                 # 14 metrics, grouped
 │   ├── pipeline.py                # RAG runner exposing retrieval context
 │   ├── runner.py · report.py      # Orchestration, JSON/CSV/MD reports
+│   ├── service.py                 # Background jobs + report store (used by API/UI)
 │   ├── run_eval.py                # CLI
 │   ├── synthesize.py              # Golden set from ingested docs
 │   ├── test_rag_deepeval.py       # pytest / `deepeval test run`
