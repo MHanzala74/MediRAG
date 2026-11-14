@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import Depends
 from app.schemas.auth import SignupRequest, TokenResponse
 from app.core.security import hash_password, verify_password, create_access_token
-from app.db.models import get_user, insert_user
+from app.db.models import get_user, insert_user, touch_last_login
 from app.core.config import settings
 from app.utils.logger import logger
 
@@ -39,6 +39,15 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
     if not user or not verify_password(form.password, user["password"]):
         logger.warning("Failed login attempt for: %s", form.username)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not user["is_active"]:
+        logger.warning("Login refused for disabled account: %s", user["username"])
+        raise HTTPException(status_code=403, detail="This account has been disabled. Contact an administrator.")
+
+    try:
+        touch_last_login(user["username"])
+    except Exception as e:                      # analytics must never block a login
+        logger.warning("Could not store last_login: %s", e)
 
     token = create_access_token({"sub": user["username"], "role": user["role"]})
     logger.info("User logged in: %s", form.username)

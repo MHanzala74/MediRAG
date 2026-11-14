@@ -1,7 +1,7 @@
 """Document upload and listing endpoints."""
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
-from app.core.security import get_current_user, require_admin
+from app.core.security import require_admin
 from app.rag.ingestion import ingest_document
 from app.db.models import list_docs
 from app.schemas.docs import UploadResponse, DocsListResponse
@@ -42,8 +42,7 @@ async def upload_document(
     )
 
 
-@router.get("/list", response_model=DocsListResponse, summary="List uploaded documents")
-def list_documents(user: dict = Depends(get_current_user)):
-    role_filter = None if user["role"] == "admin" else user["role"]
-    docs = list_docs(role=role_filter)
+@router.get("/list", response_model=DocsListResponse, summary="List all uploaded documents (admin only)")
+def list_documents(user: dict = Depends(require_admin)):
+    docs = list_docs()
     return DocsListResponse(total=len(docs), documents=docs)

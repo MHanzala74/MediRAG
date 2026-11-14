@@ -3,7 +3,7 @@ from typing import List
 
 class ChatRequest(BaseModel):
     message: str       = Field(..., min_length=1, max_length=1000)
-    session_id: str    = Field(..., description="Unique session ID for chat history")
+    session_id: str    = Field(..., min_length=1, max_length=100, description="Unique session ID for chat history")
 
 class Source(BaseModel):
     filename: str

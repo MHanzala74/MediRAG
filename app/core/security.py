@@ -39,12 +39,23 @@ def decode_token(token: str) -> dict:
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    """Validate the JWT, then confirm against the DB that the account still exists, is
+    active, and what its CURRENT role is — so disabling or demoting a user takes effect
+    immediately instead of when their token expires."""
     payload = decode_token(token)
     username = payload.get("sub")
-    role = payload.get("role")
     if not username:
         raise HTTPException(status_code=401, detail="Invalid token payload")
-    return {"username": username, "role": role}
+
+    from app.db.models import get_user_account       # lazy: keeps this module import-light
+    account = get_user_account(username)
+    if not account or not account["is_active"]:
+        raise HTTPException(
+            status_code=401,
+            detail="This account is disabled or no longer exists.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return {"username": account["username"], "role": account["role"]}
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
