@@ -45,7 +45,8 @@
       <div class="brand"><span class="logo">⚕</span> MediRAG</div>
       <nav class="tabs" id="tabs">
         <button data-tab="chat" class="active" type="button">Chat</button>
-        <button data-tab="docs" type="button">Documents</button>
+        <button data-tab="docs" id="tab-docs-btn" type="button" hidden>Documents</button>
+        <button data-tab="usage" id="tab-usage-btn" type="button" hidden>Usage</button>
         <button data-tab="eval" id="tab-eval-btn" type="button" hidden>Evaluation</button>
       </nav>
       <div class="right">
@@ -88,16 +89,43 @@
             <div id="upload-status" class="small muted" aria-live="polite"></div>
           </div>
         </section>
-        <section class="card" id="upload-note" hidden>
-          <h2>Documents</h2>
-          <p class="muted">Only admins can upload documents. Your questions are answered from the documents listed here.</p>
-        </section>
         <section class="card wide">
           <div class="row between"><h2>Indexed documents</h2><button id="docs-refresh" class="btn ghost" type="button">Refresh</button></div>
           <div class="table-wrap"><table id="docs-table"><thead><tr><th>File</th><th>Access</th><th>Chunks</th><th>Uploaded by</th><th>When</th></tr></thead><tbody></tbody></table></div>
           <p id="docs-empty" class="muted" hidden>No documents yet.</p>
         </section>
       </div>
+    </main>
+
+    <!-- Usage (admin) -->
+    <main id="tab-usage" class="tab" hidden>
+      <div class="row between wrap gap" style="margin-bottom:14px">
+        <div><h2 style="margin:0">Usage &amp; users</h2>
+          <div class="small muted">Per-request metadata only — message text is never shown here. Cost is an estimate.</div></div>
+        <div class="row gap">
+          <select id="us-range" aria-label="Time range" style="width:auto">
+            <option value="1">Last 24 hours</option><option value="7" selected>Last 7 days</option>
+            <option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="0">All time</option>
+          </select>
+          <button id="us-refresh" class="btn" type="button">Refresh</button>
+        </div>
+      </div>
+      <div id="us-kpis" class="kpis"></div>
+      <div class="grid-usage">
+        <section class="card"><h2>Requests per day</h2><div id="us-chart"></div></section>
+        <section class="card"><h2>By model</h2>
+          <div class="table-wrap"><table id="us-models"><thead><tr><th>Model</th><th>Requests</th><th>Tokens</th><th>Est. cost</th></tr></thead><tbody></tbody></table></div></section>
+      </div>
+      <section class="card" style="margin-top:16px"><h2>Users</h2>
+        <div class="table-wrap"><table id="us-users"><thead><tr>
+          <th>User</th><th>Role</th><th>Status</th><th>Requests</th><th>Blocked / Errors</th>
+          <th>Tokens in</th><th>Tokens out</th><th>Total tokens</th><th>Est. cost</th><th>Avg latency</th><th>Last request</th><th>Last login</th><th></th>
+        </tr></thead><tbody></tbody></table></div>
+      </section>
+      <section class="card" style="margin-top:16px">
+        <div class="row between"><h2>Recent requests <span id="us-filter" class="small muted"></span></h2></div>
+        <div class="table-wrap"><table id="us-recent"><thead><tr><th>Time</th><th>User</th><th>Result</th><th>Model</th><th>Tokens</th><th>Latency</th><th>Est. cost</th></tr></thead><tbody></tbody></table></div>
+      </section>
     </main>
 
     <!-- Evaluation -->

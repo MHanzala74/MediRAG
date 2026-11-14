@@ -32,7 +32,7 @@ const type = (d, s, v) => { const el = $(d, s); el.value = v; el.dispatchEvent(n
   type(d, '#auth-pass', 'password123'); click(d, '#auth-submit');
   ok(await until(() => !$(d, '#app-view').hidden), 'admin logged in, app shown');
   ok($(d, '#user-chip').textContent === 'admin_one · admin', 'username lower-cased + role chip: ' + $(d, '#user-chip').textContent);
-  ok(!$(d, '#tab-eval-btn').hidden, 'Evaluation tab visible for admin');
+  ok(!$(d, '#tab-eval-btn').hidden && !$(d, '#tab-usage-btn').hidden && !$(d, '#tab-docs-btn').hidden, 'Documents, Usage and Evaluation tabs visible for admin');
   ok(await until(() => /online/.test($(d, '#health-badge').textContent)), 'health badge online');
 
   console.log('\n[2] Chat');
@@ -58,6 +58,28 @@ const type = (d, s, v) => { const el = $(d, s); el.value = v; el.dispatchEvent(n
   d.window.document.querySelector('#tabs [data-tab=docs]').dispatchEvent(new d.window.Event('click'));
   ok(await until(() => $$(d, '#docs-table tbody tr').length === 1), 'document list rendered');
   ok(!$(d, '#upload-card').hidden, 'upload card visible for admin');
+
+  console.log('\n[3b] Usage dashboard (admin)');
+  d.window.document.querySelector('#tabs [data-tab=usage]').dispatchEvent(new d.window.Event('click'));
+  ok(await until(() => $$(d, '#us-kpis .kpi').length === 6), '6 KPI cards');
+  const kt = $$(d, '#us-kpis .kpi').map(k => k.textContent).join(' | ');
+  ok(/4Registered users/.test(kt) && /3Active users/.test(kt) && /17Requests/.test(kt), 'users / active users / requests KPIs: ' + kt.slice(0, 90));
+  ok(/39,200/.test(kt) && /\$0\.0086/.test(kt), 'token total and cost estimate shown');
+  ok($$(d, '#us-chart .col').length === 7, 'daily chart has 7 bars');
+  ok($$(d, '#us-models tbody tr').length === 2, 'per-model table');
+  ok(await until(() => $$(d, '#us-users tbody tr').length === 5), 'per-user table lists every user (incl. 0-request carol)');
+  const alice = $$(d, '#us-users tbody tr').find(r => r.cells[0].textContent === 'alice');
+  ok(alice && alice.cells[3].textContent === '12' && alice.cells[7].textContent === '28,800', 'alice: 12 requests, 28,800 tokens');
+  const self = $$(d, '#us-users tbody tr').find(r => r.cells[0].textContent === 'admin_one');
+  ok(/you/.test(self.cells[12].textContent) && !self.cells[12].querySelector('button'), 'admin cannot disable themselves (no button)');
+  alice.cells[0].dispatchEvent(new d.window.Event('click'));
+  ok(await until(() => /alice/.test($(d, '#us-filter').textContent) && $$(d, '#us-recent tbody tr').length === 1), 'clicking a user filters recent requests');
+  const bobRow = () => $$(d, '#us-users tbody tr').find(r => r.cells[0].textContent === 'bob');
+  bobRow().cells[12].querySelector('button').dispatchEvent(new d.window.Event('click'));
+  ok(await until(() => /disabled/.test(bobRow().cells[2].textContent)), 'Disable button disables bob and table refreshes');
+  ok(bobRow().cells[12].querySelector('button').textContent === 'Enable', 'button flips to Enable');
+  bobRow().cells[12].querySelector('button').dispatchEvent(new d.window.Event('click'));
+  ok(await until(() => /active/.test(bobRow().cells[2].textContent)), 'Enable re-activates bob');
 
   console.log('\n[4] Evaluation dashboard');
   d.window.document.querySelector('#tabs [data-tab=eval]').dispatchEvent(new d.window.Event('click'));
@@ -86,11 +108,21 @@ const type = (d, s, v) => { const el = $(d, s); el.value = v; el.dispatchEvent(n
   console.log('\n[5] Logout and normal-user view');
   click(d, '#logout');
   ok(!$(d, '#auth-view').hidden, 'logout returns to login');
+  // a disabled account cannot log in
+  await fetch(BASE + '/api/v1/admin/users/user_one/active', { method: 'PATCH', headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' }, body: '{"active":false}' });
+  type(d, '#auth-user', 'user_one'); type(d, '#auth-pass', 'password123'); click(d, '#auth-submit');
+  ok(await until(() => /disabled/.test($(d, '#auth-error').textContent) && !$(d, '#auth-error').hidden), 'disabled account cannot log in: ' + $(d, '#auth-error').textContent);
+  await fetch(BASE + '/api/v1/admin/users/user_one/active', { method: 'PATCH', headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' }, body: '{"active":true}' });
   type(d, '#auth-user', 'user_one'); type(d, '#auth-pass', 'password123'); click(d, '#auth-submit');
   ok(await until(() => !$(d, '#app-view').hidden), 'normal user logged in');
-  ok($(d, '#tab-eval-btn').hidden, 'Evaluation tab HIDDEN for normal user');
+  ok($(d, '#tab-eval-btn').hidden && $(d, '#tab-usage-btn').hidden && $(d, '#tab-docs-btn').hidden, 'normal user sees ONLY the Chat tab (Documents/Usage/Evaluation hidden)');
   d.window.document.querySelector('#tabs [data-tab=docs]').dispatchEvent(new d.window.Event('click'));
-  ok($(d, '#upload-card').hidden && !$(d, '#upload-note').hidden, 'upload hidden for normal user');
+  ok(!$(d, '#tab-chat').hidden && $(d, '#tab-docs').hidden, 'forcing the Documents tab is refused client-side too');
+  // admin disables this user while they are logged in -> next action signs them out with the reason
+  await fetch(BASE + '/api/v1/admin/users/user_one/active', { method: 'PATCH', headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' }, body: '{"active":false}' });
+  type(d, '#chat-input', 'hello'); click(d, '#chat-send');
+  ok(await until(() => !$(d, '#auth-view').hidden), 'disabled mid-session: user is signed out on next request');
+  ok(/disabled/.test($(d, '#auth-error').textContent), 'sign-out shows the reason: ' + $(d, '#auth-error').textContent);
   ok(d.window.__errors.length === 0, 'no uncaught JS errors' + (d.window.__errors.length ? ': ' + d.window.__errors.join('|') : ''));
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

@@ -9,6 +9,7 @@ const state = {
   token: null, user: null,
   sessionId: null, sessions: [], sending: false,
   opts: null, job: null, pollTimer: null, reportId: null,
+  usageTimer: null, usageUser: null,
 };
 
 /* ───────────── helpers ───────────── */
@@ -58,8 +59,10 @@ async function api(path, { method = 'GET', json, form, raw = false, noAuth = fal
   else if (form) body = form;           // URLSearchParams / FormData set their own content type
   const res = await fetch(API + path, { method, headers, body });
   if (res.status === 401 && !noAuth) {
-    logout('Your session expired. Please log in again.');
-    throw new ApiError(401, 'Session expired');
+    let msg = 'Your session expired. Please log in again.';
+    try { const d = await res.json(); if (d && /disabled/i.test(d.detail || '')) msg = d.detail; } catch { /* keep default */ }
+    logout(msg);
+    throw new ApiError(401, msg);
   }
   if (raw) {
     if (!res.ok) throw new ApiError(res.status, `Request failed (${res.status})`);
@@ -142,7 +145,7 @@ async function submitAuth() {
   } finally { btn.disabled = false; }
 }
 function logout(message) {
-  stopPolling();
+  stopPolling(); clearInterval(state.usageTimer); state.usageTimer = null;
   state.token = null; state.user = null;
   sessionStorage.removeItem('medirag:auth');
   $('#app-view').hidden = true; $('#auth-view').hidden = false;
@@ -155,14 +158,17 @@ function showApp() {
   $('#auth-view').hidden = true; $('#app-view').hidden = false;
   const isAdmin = state.user.role === 'admin';
   $('#user-chip').textContent = `${state.user.username} · ${state.user.role}`;
-  $('#tab-eval-btn').hidden = !isAdmin;
-  $('#upload-card').hidden = !isAdmin; $('#upload-note').hidden = isAdmin;
+  // Users only chat. Documents, usage analytics and evaluation are admin-only.
+  for (const id of ['#tab-docs-btn', '#tab-usage-btn', '#tab-eval-btn']) $(id).hidden = !isAdmin;
   switchTab('chat'); loadHealth(); initChat();
 }
 function switchTab(name) {
+  if (name !== 'chat' && state.user.role !== 'admin') name = 'chat';       // defence in depth; the API enforces it too
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
-  for (const t of ['chat', 'docs', 'eval']) $('#tab-' + t).hidden = t !== name;
+  for (const t of ['chat', 'docs', 'usage', 'eval']) $('#tab-' + t).hidden = t !== name;
+  clearInterval(state.usageTimer); state.usageTimer = null;
   if (name === 'docs') loadDocs();
+  if (name === 'usage') { loadUsage(); state.usageTimer = setInterval(loadUsage, 30000); }
   if (name === 'eval') loadEval();
 }
 async function loadHealth() {
@@ -277,6 +283,91 @@ async function uploadDoc() {
     $('#doc-file').value = ''; loadDocs();
   } catch (e) { st.textContent = 'Upload failed: ' + e.message; }
   finally { $('#doc-upload').disabled = false; }
+}
+
+/* ───────────── usage dashboard (admin) ───────────── */
+const nf = (v) => Number(v || 0).toLocaleString();
+const usd = (v) => v == null ? '—' : '$' + Number(v).toFixed(Number(v) !== 0 && Math.abs(v) < 0.01 ? 5 : 4);
+const ms = (v) => v ? (v >= 1000 ? (v / 1000).toFixed(1) + ' s' : Math.round(v) + ' ms') : '—';
+async function loadUsage() {
+  const days = $('#us-range').value;
+  try {
+    const [sum, users, recent] = await Promise.all([
+      api('/admin/usage/summary?days=' + days),
+      api('/admin/usage/users?days=' + days),
+      api('/admin/usage/recent?limit=50' + (state.usageUser ? '&username=' + encodeURIComponent(state.usageUser) : '')),
+    ]);
+    renderUsageKpis(sum); renderUsageChart(sum.daily); renderModels(sum.by_model);
+    renderUsers(users.users); renderRecent(recent.requests);
+  } catch (e) { if (e.status !== 401) toast('Could not load usage: ' + e.message); }
+}
+function renderUsageKpis(s) {
+  const t = s.totals, u = s.users;
+  const k = (label, value, sub, cls = '') => h('div', { class: 'kpi ' + cls }, h('div', { class: 'v', text: value }),
+    h('div', { class: 'l', text: label }), sub ? h('div', { class: 's', text: sub }) : null);
+  const box = clear($('#us-kpis'));
+  box.append(
+    k('Registered users', nf(u.regular), `+ ${u.admins} admin${u.admins === 1 ? '' : 's'}${u.disabled ? ` · ${u.disabled} disabled` : ''}`),
+    k('Active users', nf(t.active_users), 'sent ≥ 1 request in range'),
+    k('Requests', nf(t.requests), `${nf(t.blocked)} blocked · ${nf(t.errors)} errors`),
+    k('LLM tokens', nf(t.total_tokens), `${nf(t.prompt_tokens)} in · ${nf(t.completion_tokens)} out`),
+    k('Est. LLM cost', usd(t.cost_usd), t.unpriced_requests ? `${t.unpriced_requests} request(s) on an unpriced model` : 'estimate'),
+    k('Avg response time', ms(t.avg_latency_ms), 'successful answers'));
+}
+function renderUsageChart(daily) {
+  const box = clear($('#us-chart'));
+  const max = Math.max(1, ...daily.map(d => d.requests));
+  box.append(h('div', { class: 'chart', role: 'img', 'aria-label': 'Requests per day' },
+    daily.map(d => h('div', { class: 'col', title: `${d.date}: ${d.requests} request(s), ${nf(d.tokens)} tokens, ${d.users} user(s)` },
+      h('div', { class: 'b', style: `height:${d.requests ? Math.max(3, d.requests / max * 100) : 0}%` })))));
+  if (daily.length) box.append(h('div', { class: 'chart-x' }, h('span', { text: daily[0].date }),
+    h('span', { text: `peak ${nf(max)} / day` }), h('span', { text: daily[daily.length - 1].date })));
+}
+function renderModels(rows) {
+  const tb = clear($('#us-models tbody'));
+  if (!rows.length) { tb.append(h('tr', {}, h('td', { colspan: 4, class: 'muted', text: 'No requests in this range.' }))); return; }
+  for (const m of rows)
+    tb.append(h('tr', {}, h('td', { text: m.model === '-' ? '(blocked / failed)' : m.model, title: m.provider }),
+      h('td', { class: 'num', text: nf(m.requests) }), h('td', { class: 'num', text: nf(m.total_tokens) }), h('td', { class: 'num', text: usd(m.cost_usd) })));
+}
+function renderUsers(rows) {
+  const tb = clear($('#us-users tbody'));
+  for (const u of rows) {
+    const self = u.username === state.user.username;
+    const btn = self ? h('span', { class: 'muted small', text: 'you' }) : h('button', {
+      class: 'btn ' + (u.is_active ? 'danger' : ''), type: 'button', text: u.is_active ? 'Disable' : 'Enable',
+      onclick: () => toggleUser(u) });
+    tb.append(h('tr', {},
+      h('td', { class: 'u', title: 'Show this user\'s recent requests', text: u.username, onclick: () => { state.usageUser = u.username; loadUsage(); } }),
+      h('td', {}, h('span', { class: 'badge', text: u.role })),
+      h('td', {}, h('span', { class: 'pill ' + (u.is_active ? 'good' : 'bad'), text: u.is_active ? 'active' : 'disabled' })),
+      h('td', { class: 'num', text: nf(u.requests) }), h('td', { class: 'num', text: `${nf(u.blocked)} / ${nf(u.errors)}` }),
+      h('td', { class: 'num', text: nf(u.prompt_tokens) }), h('td', { class: 'num', text: nf(u.completion_tokens) }),
+      h('td', { class: 'num', text: nf(u.total_tokens) }), h('td', { class: 'num', text: usd(u.cost_usd) }),
+      h('td', { class: 'num', text: ms(u.avg_latency_ms) }),
+      h('td', { text: u.last_request ? when(u.last_request) : '—' }), h('td', { text: u.last_login ? when(u.last_login) : 'never' }),
+      h('td', {}, btn)));
+  }
+}
+function renderRecent(rows) {
+  const f = clear($('#us-filter'));
+  if (state.usageUser) f.append('· ', h('strong', { text: state.usageUser }), ' ',
+    h('button', { class: 'btn ghost', type: 'button', text: '✕ show all', onclick: () => { state.usageUser = null; loadUsage(); } }));
+  const tb = clear($('#us-recent tbody'));
+  if (!rows.length) { tb.append(h('tr', {}, h('td', { colspan: 7, class: 'muted', text: 'No requests yet.' }))); return; }
+  for (const r of rows)
+    tb.append(h('tr', {}, h('td', { text: when(r.created_at) }), h('td', { text: r.username }),
+      h('td', {}, h('span', { class: 'pill ' + (r.status === 'ok' ? 'good' : r.status === 'blocked' ? 'na' : 'bad'), text: r.status })),
+      h('td', { text: r.model === '-' ? '—' : r.model }), h('td', { class: 'num', text: nf(r.total_tokens) }),
+      h('td', { class: 'num', text: ms(r.latency_ms) }), h('td', { class: 'num', text: usd(r.cost_usd) })));
+}
+async function toggleUser(u) {
+  const enable = !u.is_active;
+  if (!enable && !confirm(`Disable "${u.username}"? They will be signed out immediately and cannot log in until re-enabled.`)) return;
+  try {
+    await api(`/admin/users/${encodeURIComponent(u.username)}/active`, { method: 'PATCH', json: { active: enable } });
+    toast(`${u.username} ${enable ? 'enabled' : 'disabled'}`); loadUsage();
+  } catch (e) { toast(e.message); }
 }
 
 /* ───────────── evaluation ───────────── */
@@ -507,6 +598,8 @@ function init() {
   $('#chat-input').addEventListener('input', updateCount);
   $('#chat-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
   $('#docs-refresh').onclick = loadDocs;
+  $('#us-refresh').onclick = loadUsage;
+  $('#us-range').onchange = loadUsage;
   $('#doc-upload').onclick = uploadDoc;
   $('#ev-run').onclick = startRun;
   $('#ev-synth').onclick = startSynth;
