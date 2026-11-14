@@ -38,4 +38,4 @@ eval-synth:
 	python -m evaluation.synthesize --n 25 --out evaluation/data/synthetic.json
 
 test:
-	pytest evaluation -v
+	pytest evaluation tests -v

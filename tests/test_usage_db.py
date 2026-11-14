@@ -4,7 +4,6 @@ Usage-tracking + account/session SQL tested against a REAL PostgreSQL.
 Uses a throw-away database (created and dropped by the test, never your dev DB).
 Skipped automatically when PostgreSQL is not reachable with the POSTGRES_* settings.
 """
-import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -14,33 +13,6 @@ psycopg2 = pytest.importorskip("psycopg2")
 from app.core.config import settings  # noqa: E402
 from app.core.pricing import estimate_cost  # noqa: E402
 from app.db import database, models, usage  # noqa: E402
-
-
-def _admin_conn():
-    c = psycopg2.connect(host=settings.postgres_host, port=settings.postgres_port, user=settings.postgres_user,
-                         password=settings.postgres_password, dbname="postgres", connect_timeout=3)
-    c.autocommit = True
-    return c
-
-
-@pytest.fixture(scope="module")
-def db():
-    try:
-        admin = _admin_conn()
-    except Exception as e:
-        pytest.skip(f"PostgreSQL not reachable: {e}")
-    name = "medirag_test_" + uuid.uuid4().hex[:8]
-    admin.cursor().execute(f'CREATE DATABASE "{name}"')
-    original = settings.postgres_db
-    settings.postgres_db = name
-    database._pool = None
-    database.init_pool()
-    yield name
-    database.close_pool()
-    database._pool = None
-    settings.postgres_db = original
-    admin.cursor().execute(f'DROP DATABASE "{name}" WITH (FORCE)')
-    admin.close()
 
 
 def sql(query, params=()):

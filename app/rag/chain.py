@@ -8,12 +8,12 @@ Pipeline:
 """
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.output_parsers import StrOutputParser
 
 from app.rag.vectorstore import get_vectorstore
 from app.rag.retriever.hybrid_retriever import HybridRetriever
 from app.rag.reranker.cross_encoder import reranker
-from app.rag.llm_router import get_llm
+from app.rag.llm_router import get_llm, provider_name
+from app.rag.llm_usage import message_text, token_usage
 from app.guardrails.nemo_guardrails import nemo_guardrails
 from app.db.models import save_message, get_history
 from app.core.config import settings
@@ -50,7 +50,7 @@ async def run_rag_chain(query: str, user_role: str, session_id: str) -> dict:
     Full RAG pipeline with NeMo Guardrails.
 
     Returns:
-        dict: answer, sources, model_used, retrieval_method, guardrail_passed
+        dict: answer, sources, model_used, retrieval_method, guardrail_passed, provider, usage
     """
 
     # ── NeMo Layer 1: Input Rail ──────────────────────────────────────
@@ -86,6 +86,8 @@ async def run_rag_chain(query: str, user_role: str, session_id: str) -> dict:
                 "model_used":       "none",
                 "retrieval_method": method,
                 "guardrail_passed": False,
+                "provider":         None,
+                "usage":            {"prompt_tokens": 0, "completion_tokens": 0, "tokens_estimated": False},
             }
 
     # ── Cross-encoder reranking ───────────────────────────────────────
@@ -115,16 +117,22 @@ async def run_rag_chain(query: str, user_role: str, session_id: str) -> dict:
     # ── LLM call ──────────────────────────────────────────────────────
     llm        = get_llm()
     model_name = getattr(llm, "model_name", type(llm).__name__)
-    chain      = _build_prompt() | llm | StrOutputParser()
+    chain      = _build_prompt() | llm
 
     try:
-        raw = chain.invoke({
+        msg = chain.invoke({
             "context":      context,
             "chat_history": chat_history,
             "question":     query,
         })
     except Exception as e:
         raise RAGException(e)
+    raw   = message_text(msg)
+    usage = token_usage(
+        msg,
+        prompt_chars=len(SYSTEM_PROMPT) + len(context) + len(query) + sum(len(m.content) for m in chat_history),
+        answer=raw,
+    )
 
     # ── NeMo Layer 3: Output Rail + Disclaimer ────────────────────────
     if settings.enable_guardrails:
@@ -149,4 +157,6 @@ async def run_rag_chain(query: str, user_role: str, session_id: str) -> dict:
         "model_used":       model_name,
         "retrieval_method": method,
         "guardrail_passed": True,
+        "provider":         provider_name(),
+        "usage":            usage,
     }
