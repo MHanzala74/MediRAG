@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="975" viewBox="0 0 1260 975" font-family="'Times New Roman', Times, 'Liberation Serif', 'Nimbus Roman', serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="995" viewBox="0 0 1260 995" font-family="'Times New Roman', Times, 'Liberation Serif', 'Nimbus Roman', serif">
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#222"/></marker><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#A8433A"/></marker><marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#666"/></marker></defs>
-<rect width="1260" height="975" fill="#ffffff"/>
+<rect width="1260" height="995" fill="#ffffff"/>
 <rect x="14" y="14" width="1232" height="186" rx="8" fill="none" stroke="#9a9a9a" stroke-width="1.0" stroke-dasharray="5 4"/>
 <text x="30" y="36" font-size="14" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a"><tspan font-weight="bold">(a)</tspan></text>
 <text x="59.6" y="36" font-size="13" font-weight="normal" font-style="italic" text-anchor="start" fill="#333">Offline: document ingestion and indexing</text>
@@ -61,9 +61,10 @@
 <rect x="60" y="346" width="140" height="36" rx="4" fill="#ffffff" stroke="#8a8a8a" stroke-width="0.9"/>
 <text x="130.0" y="368" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">JWT (OAuth2 Bearer)</text>
 <rect x="60" y="390" width="140" height="36" rx="4" fill="#ffffff" stroke="#8a8a8a" stroke-width="0.9"/>
-<text x="130.0" y="412" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">RBAC: role {user, admin}</text>
+<text x="130.0" y="405.0" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">Account active? role</text>
+<text x="130.0" y="417.5" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">from DB (RBAC)</text>
 <rect x="60" y="434" width="140" height="36" rx="4" fill="#ffffff" stroke="#8a8a8a" stroke-width="0.9"/>
-<text x="130.0" y="456" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">session id for history</text>
+<text x="130.0" y="456" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">Session owned by user</text>
 <rect x="254" y="262" width="160" height="226" rx="7" fill="#FBE9E7" stroke="#A8433A" stroke-width="1.3"/>
 <text x="334.0" y="284" font-size="13" font-weight="bold" font-style="normal" text-anchor="middle" fill="#1a1a1a">2  Input Guardrail G1</text>
 <line x1="264" y1="292" x2="404" y2="292" stroke="#A8433A" stroke-width="0.8"/>
@@ -109,12 +110,12 @@
 <text x="946.0" y="317.0" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">Prompt: rules + C_n</text>
 <text x="946.0" y="329.5" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">+ chat history</text>
 <rect x="876" y="346" width="140" height="36" rx="4" fill="#ffffff" stroke="#8a8a8a" stroke-width="0.9"/>
-<text x="946.0" y="368" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">LLM router  (T = 0)</text>
+<text x="946.0" y="361.0" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">Provider from config</text>
+<text x="946.0" y="373.5" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">(PRIMARY_LLM, T = 0)</text>
 <rect x="876" y="390" width="140" height="36" rx="4" fill="#ffffff" stroke="#8a8a8a" stroke-width="0.9"/>
-<text x="946.0" y="412" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">primary: GPT-4o-mini</text>
+<text x="946.0" y="412" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">OpenAI: GPT-4o-mini</text>
 <rect x="876" y="434" width="140" height="36" rx="4" fill="#ffffff" stroke="#8a8a8a" stroke-width="0.9"/>
-<text x="946.0" y="449.0" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">fallback: Llama-3.3-70B</text>
-<text x="946.0" y="461.5" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">(Groq)</text>
+<text x="946.0" y="456" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">or Groq: Llama-3.3-70B</text>
 <rect x="1070" y="262" width="160" height="226" rx="7" fill="#FBE9E7" stroke="#A8433A" stroke-width="1.3"/>
 <text x="1150.0" y="284" font-size="13" font-weight="bold" font-style="normal" text-anchor="middle" fill="#1a1a1a">6  Output G3 / G4</text>
 <line x1="1080" y1="292" x2="1220" y2="292" stroke="#A8433A" stroke-width="0.8"/>
@@ -143,7 +144,7 @@
 <text x="19" y="402" font-size="9.5" font-weight="normal" font-style="italic" text-anchor="start" fill="#555">or API</text>
 <rect x="50" y="506" width="1180" height="28" rx="4" fill="#FFF5D6" stroke="#8F741B" stroke-width="1.1"/>
 <text x="468" y="525" font-size="12.5" font-weight="bold" font-style="normal" text-anchor="start" fill="#1a1a1a">PostgreSQL</text>
-<text x="548" y="525" font-size="12" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">&#8212;  users  &#183;  chat history  &#183;  document registry</text>
+<text x="548" y="525" font-size="12" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">&#8212;  users  &#183;  chat history  &#183;  document registry  &#183;  usage logs (tokens, latency)</text>
 <polyline points="130.0,488 130.0,506" fill="none" stroke="#666" stroke-width="1.1" stroke-dasharray="4 3" marker-end="url(#ag)" marker-start="url(#ag)"/>
 <polyline points="946.0,488 946.0,506" fill="none" stroke="#666" stroke-width="1.1" stroke-dasharray="4 3" marker-end="url(#ag)" marker-start="url(#ag)"/>
 <polyline points="1150.0,488 1150.0,506" fill="none" stroke="#666" stroke-width="1.1" stroke-dasharray="4 3" marker-end="url(#ag)" marker-start="url(#ag)"/>
@@ -218,7 +219,8 @@
 <polyline points="334,556 334,620" fill="none" stroke="#666" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ag)"/>
 <text x="344" y="596" font-size="11" font-weight="normal" font-style="italic" text-anchor="start" fill="#555">re-uses the components of (b)</text>
 <text x="36" y="898" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a"><tspan font-weight="bold">Figure 1.</tspan> Architecture of MediRAG. (a) Offline: admin-uploaded PDFs are parsed, chunked and embedded; chunks <tspan font-style="italic">c</tspan><tspan font-size="9" dy="3">i</tspan><tspan dy="-3"> </tspan>with role metadata are indexed in ChromaDB.</text>
-<text x="36" y="914" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated, screened by an input guardrail (G1), matched by dense retrieval re-scored with BM25 and fused with RRF, checked for context sufficiency (G2),</text>
-<text x="36" y="930" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">reranked by a cross-encoder, answered by a multi-provider LLM router, and post-processed by output and hallucination guardrails (G3, G4). (c) A golden dataset is run through the same components</text>
-<text x="36" y="946" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">and scored by 14 DeepEval metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.</text>
+<text x="36" y="914" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated (account and role re-checked in the database), screened by an input guardrail (G1), matched by dense retrieval re-scored</text>
+<text x="36" y="930" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">with BM25 and fused with RRF, checked for context sufficiency (G2), reranked by a cross-encoder, answered by the configured LLM (OpenAI or Groq), and post-processed by output and hallucination</text>
+<text x="36" y="946" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">guardrails (G3, G4). Tokens, latency and status of every request are logged per user for the admin usage dashboard. (c) A golden dataset is run through the same components and scored by 14 DeepEval</text>
+<text x="36" y="962" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.</text>
 </svg>

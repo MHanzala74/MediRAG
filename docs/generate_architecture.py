@@ -5,7 +5,7 @@
 """
 from xml.sax.saxutils import escape
 
-W, H = 1260, 975
+W, H = 1260, 995
 FONT = "'Times New Roman', Times, 'Liberation Serif', 'Nimbus Roman', serif"
 INK = "#1a1a1a"
 
@@ -120,7 +120,7 @@ xs = [50 + i * 204 for i in range(6)]
 stages = [
     ("1  Query &amp; Auth", "neutral", [
         ("FastAPI  /chat/query", None), ("JWT (OAuth2 Bearer)", None),
-        ("RBAC: role {user, admin}", None), ("session id for history", None)]),
+        ("Account active? role\nfrom DB (RBAC)", None), ("Session owned by user", None)]),
     ("2  Input Guardrail G1", "guard", [
         ("NeMo Guardrails\n+ rule fallback", None), ("off-topic / harmful", None),
         ("crisis -> emergency info", None), ("fail: safe refusal (422)", "red")]),
@@ -131,8 +131,8 @@ stages = [
         ("Context sufficiency check", "guard"), ("Cross-encoder rerank\nms-marco-MiniLM-L-6", None),
         ("keep top-n  (n = 3)", None), ("output: C_n", "io")]),
     ("5  Generation", "gen", [
-        ("Prompt: rules + C_n\n+ chat history", None), ("LLM router  (T = 0)", None),
-        ("primary: GPT-4o-mini", None), ("fallback: Llama-3.3-70B\n(Groq)", None)]),
+        ("Prompt: rules + C_n\n+ chat history", None), ("Provider from config\n(PRIMARY_LLM, T = 0)", None),
+        ("OpenAI: GPT-4o-mini", None), ("or Groq: Llama-3.3-70B", None)]),
     ("6  Output G3 / G4", "guard", [
         ("Strip risky advice", None), ("Hallucination signals", None),
         ("Append disclaimer", None), ("output: answer a\n+ cited sources", "io")]),
@@ -171,7 +171,7 @@ txt(19, yb + 140, "or API", size=9.5, style="italic", anchor="start", fill="#555
 ys = 506
 rect(50, ys, 1180, 28, *PAL["store"], rx=4, sw=1.1)
 txt(468, ys + 19, "PostgreSQL", size=12.5, weight="bold", anchor="start")
-txt(548, ys + 19, "&#8212;  users  &#183;  chat history  &#183;  document registry", size=12, anchor="start")
+txt(548, ys + 19, "&#8212;  users  &#183;  chat history  &#183;  document registry  &#183;  usage logs (tokens, latency)", size=12, anchor="start")
 for i, d in ((0, True), (4, True), (5, False)):
     cx = xs[i] + wb / 2
     arrow([(cx, yb + hb), (cx, ys)] if not d else [(cx, yb + hb), (cx, ys)], color="#666", dash="4 3", marker="ag", sw=1.1, both=True)
@@ -236,9 +236,10 @@ txt(344, 596, "re-uses the components of (b)", size=11, style="italic", anchor="
 # ═══════════════ caption ═══════════════
 cap = [
     '<tspan font-weight="bold">Figure 1.</tspan> Architecture of MediRAG. (a) Offline: admin-uploaded PDFs are parsed, chunked and embedded; chunks <tspan font-style="italic">c</tspan><tspan font-size="9" dy="3">i</tspan><tspan dy="-3"> </tspan>with role metadata are indexed in ChromaDB.',
-    '(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated, screened by an input guardrail (G1), matched by dense retrieval re-scored with BM25 and fused with RRF, checked for context sufficiency (G2),',
-    'reranked by a cross-encoder, answered by a multi-provider LLM router, and post-processed by output and hallucination guardrails (G3, G4). (c) A golden dataset is run through the same components',
-    'and scored by 14 DeepEval metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.',
+    '(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated (account and role re-checked in the database), screened by an input guardrail (G1), matched by dense retrieval re-scored',
+    'with BM25 and fused with RRF, checked for context sufficiency (G2), reranked by a cross-encoder, answered by the configured LLM (OpenAI or Groq), and post-processed by output and hallucination',
+    'guardrails (G3, G4). Tokens, latency and status of every request are logged per user for the admin usage dashboard. (c) A golden dataset is run through the same components and scored by 14 DeepEval',
+    'metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.',
 ]
 for i, l in enumerate(cap):
     txt(36, 898 + i * 16, l, size=12.5, anchor="start")

@@ -49,7 +49,8 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 
 | Feature | Details |
 |---|---|
-| 🤖 Multi-model LLM | OpenAI gpt-4o-mini (primary) → Groq llama-3.3-70b (auto-fallback) |
+| 🤖 Two LLM providers | OpenAI gpt-4o-mini **or** Groq llama-3.3-70b, chosen at startup by `PRIMARY_LLM` (Groq is used when no OpenAI key is set); no automatic runtime failover |
+| 📊 Usage dashboard | Admin sees users, requests per user, tokens and estimated LLM cost; can disable accounts |
 | 🔍 Hybrid Search | Semantic (ChromaDB) + BM25 keyword + RRF fusion |
 | 🎯 Reranking | Cross-encoder ms-marco-MiniLM — reduces hallucination |
 | 🛡️ 4-Layer Guardrails | Input · Context · Output · Hallucination detection |
@@ -72,9 +73,13 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 | `POST` | `/api/v1/auth/signup` | — | Register user |
 | `POST` | `/api/v1/auth/login` | — | Login → JWT token |
 | `POST` | `/api/v1/documents/upload` | Admin | Upload PDF |
-| `GET` | `/api/v1/documents/list` | User | List accessible docs |
+| `GET` | `/api/v1/documents/list` | Admin | List all documents |
 | `POST` | `/api/v1/chat/query` | User | Ask a medical question |
 | `GET` | `/api/v1/chat/history/{session_id}` | User | Get chat history |
+| `GET` | `/api/v1/admin/usage/summary?days=7` | Admin | KPIs, requests per day, per-model totals |
+| `GET` | `/api/v1/admin/usage/users?days=7` | Admin | Every user: requests, tokens, est. cost, last login |
+| `GET` | `/api/v1/admin/usage/recent` | Admin | Latest requests (metadata only) |
+| `PATCH` | `/api/v1/admin/users/{username}/active` | Admin | Enable / disable an account |
 | `GET` | `/api/v1/evaluation/options` | Admin | Metrics, datasets, judge status |
 | `POST` | `/api/v1/evaluation/run` | Admin | Start a DeepEval run (background job) |
 | `POST` | `/api/v1/evaluation/datasets/synthesize` | Admin | Generate a test set from indexed documents |
@@ -139,15 +144,16 @@ Open **http://localhost:8000**. The first start is slower: PostgreSQL tables are
 2. **Documents tab → Upload a document.** Pick a PDF and who may use it:
    *Everyone* (users **and** admins can retrieve it) or *Admins only*. It is parsed, chunked and indexed.
 3. **Chat tab** — ask a few questions to sanity-check the answers and the cited sources.
-4. **Evaluation tab** (admin only):
+4. **Usage tab** — see who is using the chatbot (see *Reading the Usage tab* below) and disable accounts if needed.
+5. **Evaluation tab** (admin only):
    1. Click **Generate test set from my documents** (the judge LLM writes a question + reference answer per sampled chunk). The bundled `golden_dataset.json` is generic and will score poorly on *your* documents.
    2. Choose the metrics (all 14 by default), optionally limit the number of cases (start with 5–10), and press **Run evaluation**. A progress bar follows the job; the page stays usable.
    3. Read the dashboard (see below). Download **MD / CSV / JSON** for reports or papers.
 
 ### 3 · Normal user workflow
 
-1. **Sign up** as *User* (no code needed) and log in.
-2. **Chat tab** → type a medical question (or click an example). You get:
+1. **Sign up** as *User* (no code needed) and log in. Every request needs a valid login; an admin can disable your account at any time (you are then signed out immediately).
+2. Users only **chat** — they never see Documents, Usage or Evaluation. **Chat tab** → type a medical question (or click an example). You get:
    - an answer built **only from the documents you have access to**, ending with a medical disclaimer;
    - **source chips** — click one to see the passage that was used;
    - a refusal bubble (yellow) if the safety guardrails block the request (off-topic, harmful, crisis…).
@@ -156,13 +162,35 @@ Open **http://localhost:8000**. The first start is slower: PostgreSQL tables are
 
 | | User | Admin |
 |---|:-:|:-:|
-| Chat, sources, history | ✅ | ✅ |
+| Chat, sources, own chat history | ✅ | ✅ |
 | Retrieves documents tagged *Everyone* | ✅ | ✅ |
 | Retrieves documents tagged *Admins only* | ❌ | ✅ |
-| Upload documents | ❌ | ✅ |
+| See / upload documents (Documents tab) | ❌ | ✅ |
+| Usage dashboard, enable/disable users | ❌ | ✅ |
 | Evaluation tab / `/evaluation/*` API | ❌ | ✅ |
 
-### 4 · Reading the evaluation dashboard
+The server re-checks the account **in the database on every request**, so disabling or demoting a user takes
+effect immediately (not when their token expires). Chat sessions are private to the user who started them — even admins cannot read another user's chat.
+
+### 4 · Reading the Usage tab (admin)
+
+Pick a range (24 h · 7 d · 30 d · 90 d · all time); the page refreshes every 30 s.
+
+- **KPI cards** — registered users, *active users* (sent ≥ 1 request in the range), requests (with blocked / error counts),
+  LLM tokens (prompt in · completion out), **estimated** LLM cost, average response time.
+- **Requests per day** chart (hover a bar for tokens and users) and a **per-model** table.
+- **Users table** — every registered user, even those with 0 requests: requests, blocked / errors, tokens in / out / total,
+  estimated cost, average latency, last request, last login. Click a username to see only their recent requests.
+  **Disable / Enable** blocks or restores an account (you cannot disable yourself).
+- **Recent requests** — time, user, result (`ok` / `blocked` / `error`), model, tokens, latency.
+
+What is (not) recorded: per request only *metadata* (user, time, status, model, tokens, latency) — **never the question or answer text**.
+Tokens are the provider's reported usage (a ~4 chars/token estimate is used only if a provider reports none). Cost is an **estimate**
+from a built-in price table (`app/core/pricing.py`) — verify against your provider's pricing and override with
+`LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M`. Only the main answer-generation call is counted: NeMo guardrail
+calls and the evaluation judge are **not** included. Usage rows are kept indefinitely (no retention job yet).
+
+### 5 · Reading the evaluation dashboard
 
 - **Bars** show each metric's mean score (0–1); the black tick is the pass threshold. **↓** metrics
   (Hallucination, Bias, Toxicity) are *lower-is-better*. Colour follows the **pass rate** (green ≥ 80 %, amber ≥ 50 %).
@@ -173,7 +201,7 @@ Open **http://localhost:8000**. The first start is slower: PostgreSQL tables are
 - **Guardrail accuracy** = share of cases where the guardrail blocked exactly what the dataset says it should.
 - Every case makes several judge-LLM calls, so a run **costs API tokens** and takes minutes. Set `EVAL_JUDGE_MODEL` to a stronger model for more reliable judging. Only one run can be active at a time; finished reports are kept in `evaluation/reports/`.
 
-### 5 · Using the API directly (optional)
+### 6 · Using the API directly (optional)
 
 ```bash
 BASE=http://localhost:8000/api/v1
@@ -185,15 +213,16 @@ curl -X POST $BASE/chat/query -H "Authorization: Bearer $TOKEN" -H 'Content-Type
      -d '{"message":"What are the symptoms of diabetes?","session_id":"demo-1"}'
 ```
 
-Admin-only calls (`/documents/upload`, `/evaluation/run`, …) need an admin token — see the interactive docs at `/docs`.
+Admin-only calls (`/documents/upload`, `/documents/list`, `/admin/usage/*`, `/evaluation/*`) need an admin token — see the interactive docs at `/docs`.
 
-### 6 · Good to know
+### 7 · Good to know
 
 - This is an **educational tool, not medical advice**; answers are limited to your uploaded documents.
 - Evaluation test cases run with the dataset's `role` (default `user`), so only documents tagged *Everyone* are evaluated.
 - Evaluation job *status* lives in memory (lost on restart); finished *reports* are files and persist.
 - Hybrid retrieval re-scores the dense (ChromaDB) candidates with BM25 and fuses both rankings with RRF; BM25 does not search the whole corpus independently.
-- Known limitation: `GET /chat/history/{session_id}` does not check that the session belongs to the caller — session ids are random UUIDs, but treat them as secrets.
+- The LLM provider is chosen at startup (`PRIMARY_LLM`, or Groq if there is no OpenAI key). There is no automatic switch to the other provider if a call fails — the user gets an error and it is logged as `error` in the Usage tab.
+- Chat sessions that existed before the ownership feature have no owner and are no longer readable through the API.
 
 ---
 
@@ -213,7 +242,7 @@ docker compose down              # Stop
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `OPENAI_API_KEY` | ✅* | — | OpenAI key (*or Groq) |
-| `GROQ_API_KEY` | ✅* | — | Groq key (fallback LLM) |
+| `GROQ_API_KEY` | ✅* | — | Groq key (used when `PRIMARY_LLM=groq` or there is no OpenAI key) |
 | `JWT_SECRET_KEY` | ✅ | — | Secret for JWT signing |
 | `POSTGRES_PASSWORD` | ✅ | — | PostgreSQL password |
 | `ADMIN_SIGNUP_CODE` | ✅ (prod) | — | Code required to sign up as admin. Empty = admin signup allowed in development, **disabled** in production |
@@ -224,6 +253,7 @@ docker compose down              # Stop
 | `ENABLE_GUARDRAILS` | ⬜ | `true` | Enable 4-layer guardrails |
 | `RETRIEVER_K` | ⬜ | `6` | Docs to retrieve before rerank |
 | `RERANKER_TOP_N` | ⬜ | `3` | Docs sent to LLM after rerank |
+| `LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M` | ⬜ | built-in table | Flat USD price per 1M tokens for the dashboard's cost **estimate** |
 | `EVAL_JUDGE_PROVIDER` | ⬜ | = `PRIMARY_LLM` | Judge LLM for evaluation: `openai` or `groq` |
 | `EVAL_JUDGE_MODEL` | ⬜ | provider default | Use a stronger model for more reliable scores |
 
@@ -326,26 +356,38 @@ python -m evaluation.run_eval --dataset evaluation/data/synthetic.json
 Golden record format: `id`, `input`, `expected_output`, `category`
 (`factual | safety | off_topic | crisis | out_of_kb`), `role`, `expect_block`.
 
+### Running the tests
+
+```bash
+pytest evaluation tests -v        # DB tests use a throw-away database; skipped if PostgreSQL is unreachable
+# point them at your server with POSTGRES_HOST / POSTGRES_USER / POSTGRES_PASSWORD
+cd tests/ui && npm install jsdom  # UI end-to-end tests (see the header of tests/ui/e2e_server.py)
+```
+
 ---
 
 ## 📁 Project Structure
 
 ```
-RAG-Medical-Assistant/
+MediRAG/
 ├── app/
 │   ├── api/
 │   │   └── v1/
 │   │       ├── __init__.py        # Router aggregator
 │   │       ├── auth.py            # Signup, login (JWT)
 │   │       ├── chat.py            # POST /chat/query, GET /chat/history
-│   │       ├── documents.py       # POST /documents/upload, GET /list
+│   │       ├── documents.py       # POST /documents/upload, GET /list (admin only)
+│   │       ├── admin.py           # Usage analytics + enable/disable users (admin only)
+│   │       ├── evaluation.py      # DeepEval runs, datasets, reports (admin only)
 │   │       └── health.py          # GET /health
 │   ├── core/
 │   │   ├── config.py              # Pydantic settings (all from .env)
-│   │   └── security.py            # JWT create/decode, password hashing
+│   │   ├── pricing.py             # LLM cost estimate table
+│   │   └── security.py            # JWT + per-request account check, password hashing
 │   ├── db/
 │   │   ├── database.py            # psycopg2 connection pool
-│   │   └── models.py              # Table creation + CRUD
+│   │   ├── models.py              # Table creation/migrations + users, sessions, docs CRUD
+│   │   └── usage.py               # usage_logs writes + dashboard aggregate queries
 │   ├── guardrails/
 │   │   └── nemo_guardrails.py     # NeMo Guardrails + rule fallback
 │   ├── rag/
@@ -360,7 +402,8 @@ RAG-Medical-Assistant/
 │   │   │   └── cross_encoder.py   # ms-marco-MiniLM reranker
 │   │   ├── chain.py               # Full RAG pipeline
 │   │   ├── ingestion.py           # PDF → chunks → ChromaDB
-│   │   ├── llm_router.py          # OpenAI / Groq selection
+│   │   ├── llm_router.py          # OpenAI / Groq selection (config-time)
+│   │   ├── llm_usage.py           # Read token usage from LLM replies
 │   │   └── vectorstore.py         # ChromaDB singleton
 │   ├── schemas/
 │   │   ├── auth.py                # SignupRequest, TokenResponse
@@ -370,7 +413,8 @@ RAG-Medical-Assistant/
 │       ├── logger.py              # Rotating file + console logger
 │       └── exceptions.py          # RAGException, GuardrailException
 ├── app/static/                    # Web UI (index.html, app.js, style.css — no build step)
-├── tests/ui/                      # jsdom end-to-end UI test + stub server
+├── tests/                         # pytest: usage SQL + HTTP integration (real PostgreSQL)
+│   └── ui/                        # jsdom end-to-end UI tests (stub + real backend)
 ├── evaluation/                    # DeepEval RAG evaluation suite
 │   ├── judge.py                   # Judge LLM (OpenAI / Groq)
 │   ├── metrics.py                 # 14 metrics, grouped
