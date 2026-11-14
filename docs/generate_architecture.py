@@ -125,7 +125,7 @@ stages = [
         ("NeMo Guardrails\n+ rule fallback", None), ("off-topic / harmful", None),
         ("crisis -> emergency info", None), ("fail: safe refusal (422)", "red")]),
     ("3  Hybrid Retrieval", "retr", [
-        ("Dense: ChromaDB top-k\nrole-filtered", None), ("Sparse: BM25 keyword", None),
+        ("Dense: ChromaDB top-k\nrole-filtered", None), ("Sparse: BM25 re-scoring\nof dense candidates", None),
         ("Reciprocal Rank Fusion\n(k = 60)", None), ("output: C_k  (k = 6)", "io")]),
     ("4  Context G2 + Rerank", "retr", [
         ("Context sufficiency check", "guard"), ("Cross-encoder rerank\nms-marco-MiniLM-L-6", None),
@@ -165,6 +165,8 @@ for i in range(5):
 # input arrow and output arrow
 arrow([(24, yb + 112), (xs[0], yb + 112)])
 txt(26, yb + 100, sym("q"), size=12, anchor="start")
+txt(19, yb + 128, "Web UI", size=9.5, style="italic", anchor="start", fill="#555")
+txt(19, yb + 140, "or API", size=9.5, style="italic", anchor="start", fill="#555")
 # postgres strip
 ys = 506
 rect(50, ys, 1180, 28, *PAL["store"], rx=4, sw=1.1)
@@ -225,7 +227,7 @@ rx0, rw = 1074, 156
 rect(rx0, yc, rw, hc, *PAL["neutral"], rx=7, sw=1.3)
 txt(rx0 + rw / 2, yc + 26, "Reports", size=13, weight="bold")
 add(f'<line x1="{rx0+10}" y1="{yc+35}" x2="{rx0+rw-10}" y2="{yc+35}" stroke="{PAL["neutral"][1]}" stroke-width="0.8"/>')
-lines(rx0 + rw / 2, yc + 58, ["per-case scores + reasons", "JSON / CSV / Markdown", "group means, pass rate,", "guardrail accuracy", "pytest / CI gate"], size=11, lh=16)
+lines(rx0 + rw / 2, yc + 58, ["per-case scores + reasons", "JSON / CSV / Markdown", "pass rates, group means", "web dashboard (/ui)", "pytest / CI gate"], size=11, lh=16)
 arrow([(mx + mw, yc + 75), (rx0, yc + 75)]); txt((mx + mw + rx0) / 2, yc + 67, "scores", size=10.5, style="italic")
 # link from (b) to (c)
 arrow([(334, 556), (334, yc)], color="#666", dash="4 3", marker="ag", sw=1.2)
@@ -234,7 +236,7 @@ txt(344, 596, "re-uses the components of (b)", size=11, style="italic", anchor="
 # ═══════════════ caption ═══════════════
 cap = [
     '<tspan font-weight="bold">Figure 1.</tspan> Architecture of MediRAG. (a) Offline: admin-uploaded PDFs are parsed, chunked and embedded; chunks <tspan font-style="italic">c</tspan><tspan font-size="9" dy="3">i</tspan><tspan dy="-3"> </tspan>with role metadata are indexed in ChromaDB.',
-    '(b) Online: a query <tspan font-style="italic">q</tspan> is authenticated, screened by an input guardrail (G1), matched by dense + BM25 retrieval fused with RRF, checked for context sufficiency (G2),',
+    '(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated, screened by an input guardrail (G1), matched by dense retrieval re-scored with BM25 and fused with RRF, checked for context sufficiency (G2),',
     'reranked by a cross-encoder, answered by a multi-provider LLM router, and post-processed by output and hallucination guardrails (G3, G4). (c) A golden dataset is run through the same components',
     'and scored by 14 DeepEval metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.',
 ]
