@@ -11,9 +11,10 @@ LABEL description="RAG Medical Assistant — Multi-model, Hybrid Search, Guardra
 RUN useradd --create-home medrag
 WORKDIR /app
 COPY --from=builder /install /usr/local
-COPY app/     ./app/
-COPY main.py  .
-RUN mkdir -p logs docs_store chroma_db && chown -R medrag:medrag /app
+COPY app/        ./app/
+COPY evaluation/ ./evaluation/
+COPY main.py     .
+RUN mkdir -p logs docs_store chroma_db evaluation/reports && chown -R medrag:medrag /app
 USER medrag
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"

@@ -30,6 +30,8 @@ services:
       - ./logs:/app/logs
       - ./docs_store:/app/docs_store
       - ./chroma_db:/app/chroma_db
+      - ./evaluation/reports:/app/evaluation/reports   # evaluation results survive restarts
+      - ./evaluation/data:/app/evaluation/data         # golden / synthesized test sets
     depends_on:
       postgres:
         condition: service_healthy

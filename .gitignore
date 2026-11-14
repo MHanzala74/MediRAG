@@ -29,3 +29,4 @@ evaluation/reports/*
 
 # UI test deps
 node_modules/
+.deepeval
