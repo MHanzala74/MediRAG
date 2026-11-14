@@ -366,7 +366,7 @@ def options() -> dict:
             for n, s in METRICS.items()
         ],
         "datasets": list_datasets(),
-        "judge_configured": bool(settings.openai_api_key or settings.groq_api_key),
+        "judge_configured": judge_factory is not None or bool(settings.openai_api_key or settings.groq_api_key),
         "guardrails_enabled": settings.enable_guardrails,
         "active_job": active_job_id(),
     }
