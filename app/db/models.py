@@ -61,7 +61,7 @@ def create_tables():
                 username          VARCHAR(100) NOT NULL,
                 role              VARCHAR(50),
                 session_id        VARCHAR(100),
-                status            VARCHAR(20) NOT NULL,      -- ok | blocked | error
+                status            VARCHAR(20) NOT NULL,      -- ok | blocked | error | cancelled
                 provider          VARCHAR(30),
                 model             VARCHAR(100),
                 prompt_tokens     INT NOT NULL DEFAULT 0,

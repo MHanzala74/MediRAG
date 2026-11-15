@@ -26,6 +26,7 @@ def get_llm() -> BaseChatModel:
             api_key=settings.openai_api_key,
             temperature=0.0,          # deterministic for medical accuracy
             max_tokens=1500,
+            stream_usage=True,        # token usage is reported in the last streamed chunk
         )
 
     if settings.groq_api_key:

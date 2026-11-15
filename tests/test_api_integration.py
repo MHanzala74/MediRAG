@@ -2,6 +2,8 @@
 HTTP-level integration test: REAL auth, REAL JWT/security, REAL admin router, REAL PostgreSQL.
 Only the RAG chain and document ingestion are stubbed (they need an LLM and embedding models).
 """
+import asyncio
+import json
 import sys
 import types
 
@@ -27,8 +29,50 @@ async def fake_chain(query, user_role, session_id):
             "provider": "openai", "usage": {"prompt_tokens": 1000, "completion_tokens": 200, "tokens_estimated": False}}
 
 
+class FakePrepared:
+    def __init__(self, blocked_result=None):
+        self.inputs, self.method, self.n_docs, self.prompt_chars = {}, "hybrid", 2, 400
+        self.sources = [{"filename": "a.pdf", "doc_id": "d", "chunk_preview": "p"}]
+        self.blocked_result = blocked_result
+
+
+async def fake_prepare(query, user_role, session_id):
+    mode = CHAIN_BEHAVIOUR["mode"]
+    if mode == "blocked":
+        raise GuardrailException("I can only assist with medical questions.")
+    if mode == "prepare_error":
+        raise RAGException(RuntimeError("vector store down"))
+    if mode == "context_blocked":
+        return FakePrepared({"answer": "No relevant information found.", "sources": [], "model_used": "none",
+                             "retrieval_method": "hybrid", "guardrail_passed": False})
+    return FakePrepared()
+
+
+async def fake_stream(query, session_id, prepared):
+    mode = CHAIN_BEHAVIOUR["mode"]
+    for w in ["Diabetes ", "causes ", "thirst."]:
+        await asyncio.sleep(0.01)
+        yield {"type": "token", "text": w}
+    if mode == "stream_error":
+        raise RAGException(RuntimeError("provider dropped the connection"))
+    answer = "Diabetes causes thirst."
+    if mode == "replace":
+        yield {"type": "replace", "text": "WARNING\n\n" + answer + " [disclaimer]"}
+        answer = "WARNING\n\n" + answer + " [disclaimer]"
+    else:
+        yield {"type": "token", "text": " [disclaimer]"}
+        answer += " [disclaimer]"
+    yield {"type": "done", "result": {
+        "answer": answer, "sources": prepared.sources, "model_used": "gpt-4o-mini-2024-07-18",
+        "retrieval_method": "hybrid", "guardrail_passed": True, "provider": "openai",
+        "usage": {"prompt_tokens": 500, "completion_tokens": 40, "tokens_estimated": False}}}
+
+
 chain_mod = types.ModuleType("app.rag.chain")
 chain_mod.run_rag_chain = fake_chain
+chain_mod.prepare_rag = fake_prepare
+chain_mod.stream_rag = fake_stream
+chain_mod.llm_model_name = lambda: "gpt-4o-mini-2024-07-18"
 sys.modules["app.rag.chain"] = chain_mod
 docs_mod = types.ModuleType("app.api.v1.documents")
 docs_mod.router = APIRouter()
@@ -168,3 +212,115 @@ def test_role_change_applies_immediately(client, tokens, db):
 def test_days_validation(client, tokens):
     assert client.get(f"{API}/admin/usage/summary?days=999", headers=tokens["admin"]).status_code == 422
     assert client.get(f"{API}/admin/usage/summary?days=0", headers=tokens["admin"]).status_code == 200
+
+
+# ─────────────────────────── streaming (/chat/stream) ───────────────────────────
+def sse_events(response):
+    """Parse a text/event-stream body into [(event, data), ...]."""
+    out = []
+    for frame in response.text.strip().split("\n\n"):
+        lines = dict(l.split(": ", 1) for l in frame.splitlines())
+        out.append((lines["event"], json.loads(lines["data"])))
+    return out
+
+
+def stream(c, who, session, msg="what is diabetes?"):
+    return c.post(f"{API}/chat/stream", json={"message": msg, "session_id": session}, headers=who)
+
+
+def user_row(client, admin, name):
+    rows = client.get(f"{API}/admin/usage/users", headers=admin).json()["users"]
+    return next(r for r in rows if r["username"] == name)
+
+
+@pytest.fixture(scope="module")
+def streamer(client):
+    return signup_login(client, "stream_user")
+
+
+def test_stream_happy_path(client, tokens, streamer):
+    CHAIN_BEHAVIOUR["mode"] = "ok"
+    r = stream(client, streamer, "sess-stream-1")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+    assert r.headers["cache-control"] == "no-cache" and r.headers["x-accel-buffering"] == "no"
+    ev = sse_events(r)
+    kinds = [k for k, _ in ev]
+    assert kinds[0] == "meta" and kinds[-1] == "done" and kinds.count("token") == 4        # 3 words + disclaimer
+    assert ev[0][1]["sources"][0]["filename"] == "a.pdf" and ev[0][1]["model_used"].startswith("gpt-4o-mini")
+    streamed = "".join(d["text"] for k, d in ev if k == "token")
+    done = ev[-1][1]
+    assert streamed == done["answer"] == "Diabetes causes thirst. [disclaimer]"             # stream == saved answer
+    assert done["guardrail_passed"] is True and done["first_token_ms"] is not None
+    row = user_row(client, tokens["admin"], "stream_user")
+    assert row["requests"] == 1 and row["prompt_tokens"] == 500 and row["completion_tokens"] == 40
+
+
+def test_stream_replace_event(client, streamer):
+    CHAIN_BEHAVIOUR["mode"] = "replace"
+    ev = sse_events(stream(client, streamer, "sess-stream-2"))
+    replaces = [d for k, d in ev if k == "replace"]
+    assert len(replaces) == 1 and replaces[0]["text"].startswith("WARNING")
+    assert ev[-1][1]["answer"] == replaces[0]["text"]
+
+
+def test_stream_requires_auth_and_ownership(client, tokens, streamer):
+    CHAIN_BEHAVIOUR["mode"] = "ok"
+    assert client.post(f"{API}/chat/stream", json={"message": "hi", "session_id": "s"}).status_code == 401
+    assert stream(client, tokens["alice"], "sess-stream-1").status_code == 403           # someone else's session
+    assert stream(client, streamer, "x" * 101).status_code == 422
+
+
+def test_stream_input_guardrail_is_a_plain_422(client, streamer):
+    CHAIN_BEHAVIOUR["mode"] = "blocked"
+    r = stream(client, streamer, "sess-stream-3", "write python")
+    assert r.status_code == 422 and r.headers["content-type"].startswith("application/json")
+    assert "medical" in r.json()["detail"]
+
+
+def test_stream_prepare_failure_is_a_plain_500(client, streamer):
+    CHAIN_BEHAVIOUR["mode"] = "prepare_error"
+    assert stream(client, streamer, "sess-stream-4").status_code == 500
+
+
+def test_stream_context_rail_refusal(client, tokens, streamer):
+    CHAIN_BEHAVIOUR["mode"] = "context_blocked"
+    ev = sse_events(stream(client, streamer, "sess-stream-5", "rare tropical disease"))
+    assert [k for k, _ in ev] == ["meta", "token", "done"]
+    assert ev[1][1]["text"] == "No relevant information found." and ev[-1][1]["guardrail_passed"] is False
+    assert user_row(client, tokens["admin"], "stream_user")["blocked"] >= 2            # input-blocked + context-blocked
+
+
+def test_stream_error_after_first_token(client, tokens, streamer):
+    CHAIN_BEHAVIOUR["mode"] = "stream_error"
+    ev = sse_events(stream(client, streamer, "sess-stream-6"))
+    kinds = [k for k, _ in ev]
+    assert kinds[:4] == ["meta", "token", "token", "token"] and kinds[-1] == "error"
+    assert "provider dropped" in ev[-1][1]["detail"]
+    assert user_row(client, tokens["admin"], "stream_user")["errors"] >= 1
+
+
+def test_client_stop_is_logged_as_cancelled(client, tokens, streamer, db):
+    """Simulate the client disconnecting after the first token: the generator is closed."""
+    from app.api.v1 import chat as chat_mod
+    from app.schemas.chat import ChatRequest
+
+    CHAIN_BEHAVIOUR["mode"] = "ok"
+    before = client.get(f"{API}/admin/usage/summary?days=7", headers=tokens["admin"]).json()["totals"]
+
+    async def run():
+        req = ChatRequest(message="what is diabetes?", session_id="sess-stream-7")
+        assert models.claim_session(req.session_id, "stream_user", "user")
+        gen = chat_mod._sse_events(req, {"username": "stream_user", "role": "user"}, FakePrepared(), time.perf_counter())
+        frames = [await gen.__anext__(), await gen.__anext__()]           # meta + first token
+        await gen.aclose()                                                # ← disconnect
+        return frames
+
+    import time
+    frames = asyncio.run(run())
+    assert frames[0].startswith("event: meta") and frames[1].startswith("event: token")
+    after = client.get(f"{API}/admin/usage/summary?days=7", headers=tokens["admin"]).json()["totals"]
+    assert after["cancelled"] == before["cancelled"] + 1
+    assert after["completion_tokens"] > before["completion_tokens"]       # the partial answer is still counted
+    assert after["cost_usd"] > before["cost_usd"]
+    recent = client.get(f"{API}/admin/usage/recent?limit=1&username=stream_user", headers=tokens["admin"]).json()["requests"]
+    assert recent[0]["status"] == "cancelled"

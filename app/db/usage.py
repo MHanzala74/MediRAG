@@ -30,7 +30,7 @@ def record_usage(
     """Insert one usage row. Never raises — analytics must not break the chat."""
     conn = None
     try:
-        cost = estimate_cost(model, prompt_tokens, completion_tokens) if status == "ok" else 0.0
+        cost = estimate_cost(model, prompt_tokens, completion_tokens) if status in ("ok", "cancelled") else 0.0
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -70,13 +70,15 @@ def usage_summary(days: int | None) -> dict:
                        COALESCE(SUM(total_tokens),0), COALESCE(SUM(cost_usd),0),
                        COALESCE(AVG(latency_ms) FILTER (WHERE status='ok'),0),
                        COUNT(*) FILTER (WHERE status='blocked'), COUNT(*) FILTER (WHERE status='error'),
-                       COUNT(*) FILTER (WHERE status='ok' AND cost_usd IS NULL)
+                       COUNT(*) FILTER (WHERE status='ok' AND cost_usd IS NULL),
+                       COUNT(*) FILTER (WHERE status='cancelled')
                 FROM usage_logs {where}""", params)
         r = cur.fetchone()
         totals = {
             "requests": r[0], "active_users": r[1], "prompt_tokens": int(r[2]),
             "completion_tokens": int(r[3]), "total_tokens": int(r[4]), "cost_usd": round(_f(r[5]), 6),
             "avg_latency_ms": round(_f(r[6])), "blocked": r[7], "errors": r[8], "unpriced_requests": r[9],
+            "cancelled": r[10],
         }
 
         cur.execute("""SELECT COUNT(*) FILTER (WHERE role='user'), COUNT(*) FILTER (WHERE role='admin'),

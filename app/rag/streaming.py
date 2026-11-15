@@ -11,6 +11,7 @@ Output guardrail: `finalize(raw)` (NeMo `check_output`) needs the COMPLETE answe
 last token. In the normal case it only appends the medical disclaimer → the disclaimer is streamed as one
 extra token. If it rewrote the beginning (e.g. a safety warning prefix) a `replace` event carries the final text.
 """
+from contextlib import aclosing
 from typing import AsyncIterator, Callable
 
 from app.rag.llm_usage import message_text
@@ -19,13 +20,16 @@ from app.rag.llm_usage import message_text
 async def stream_llm(chain, inputs: dict, finalize: Callable[[str], str]) -> AsyncIterator[dict]:
     parts: list[str] = []
     full = None                                     # chunks add up, summing usage_metadata
-    async for chunk in chain.astream(inputs):
-        text = message_text(chunk) if hasattr(chunk, "content") else str(chunk)
-        if hasattr(chunk, "content"):
-            full = chunk if full is None else full + chunk
-        if text:
-            parts.append(text)
-            yield {"type": "token", "text": text}
+    # aclosing(): if the consumer stops early (client pressed Stop / disconnected) the provider's
+    # HTTP stream is closed immediately, so the LLM stops generating (and billing) tokens.
+    async with aclosing(chain.astream(inputs)) as chunks:
+        async for chunk in chunks:
+            text = message_text(chunk) if hasattr(chunk, "content") else str(chunk)
+            if hasattr(chunk, "content"):
+                full = chunk if full is None else full + chunk
+            if text:
+                parts.append(text)
+                yield {"type": "token", "text": text}
 
     raw = "".join(parts)
     final = finalize(raw)
