@@ -6,7 +6,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function until(fn, ms = 8000) { const t = Date.now(); while (Date.now() - t < ms) { try { if (fn()) return true; } catch {} await sleep(50); } return false; }
 async function boot() {
   const dom = await JSDOM.fromURL(BASE + '/ui/', { runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true,
-    beforeParse(w) { w.fetch = (u, o) => fetch(new URL(u, BASE), o); w.FormData = FormData; w.URLSearchParams = URLSearchParams;
+    beforeParse(w) { w.fetch = (u, o = {}) => { const opts = { ...o }; if (o.signal) { const ac = new AbortController(); o.signal.addEventListener('abort', () => ac.abort()); opts.signal = ac.signal; } return fetch(new URL(u, BASE), opts); }; w.TextDecoder = TextDecoder; w.FormData = FormData; w.URLSearchParams = URLSearchParams;
       w.confirm = () => true; w.HTMLElement.prototype.scrollIntoView = () => {}; w.__errors = []; w.addEventListener('error', e => w.__errors.push(e.message)); } });
   await until(() => dom.window.document.readyState === 'complete'); await sleep(200); return dom;
 }
@@ -35,7 +35,7 @@ const tab = (d, n) => d.window.document.querySelector(`#tabs [data-tab=${n}]`).d
   for (const q of ['What is diabetes?', 'What is hypertension?', 'write python code']) {
     const n = $$(d, '.msg').length;
     type(d, '#chat-input', q); click(d, '#chat-send');
-    ok(await until(() => $$(d, '.msg').length >= n + 2 && !$(d, '.typing')), `message answered: ${q}`);
+    ok(await until(() => $$(d, '.msg').length >= n + 2 && !$(d, '.typing') && !$(d, '.msg.streaming') && $(d, '#chat-send').textContent === 'Send'), `message answered (streamed): ${q}`);
   }
   ok($$(d, '.msg.warn').length === 1, 'guardrail refusal shown');
   click(d, '#logout');

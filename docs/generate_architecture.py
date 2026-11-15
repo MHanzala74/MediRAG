@@ -132,10 +132,10 @@ stages = [
         ("keep top-n  (n = 3)", None), ("output: C_n", "io")]),
     ("5  Generation", "gen", [
         ("Prompt: rules + C_n\n+ chat history", None), ("Provider from config\n(PRIMARY_LLM, T = 0)", None),
-        ("OpenAI: GPT-4o-mini", None), ("or Groq: Llama-3.3-70B", None)]),
+        ("OpenAI GPT-4o-mini or\nGroq Llama-3.3-70B", None), ("Token streaming (SSE)\nto the web UI", None)]),
     ("6  Output G3 / G4", "guard", [
         ("Strip risky advice", None), ("Hallucination signals", None),
-        ("Append disclaimer", None), ("output: answer a\n+ cited sources", "io")]),
+        ("Append disclaimer", None), ("output: streamed answer a\n+ cited sources", "io")]),
 ]
 for x, (title, pk, items) in zip(xs, stages):
     f, s = PAL[pk]
@@ -236,10 +236,11 @@ txt(344, 596, "re-uses the components of (b)", size=11, style="italic", anchor="
 # ═══════════════ caption ═══════════════
 cap = [
     '<tspan font-weight="bold">Figure 1.</tspan> Architecture of MediRAG. (a) Offline: admin-uploaded PDFs are parsed, chunked and embedded; chunks <tspan font-style="italic">c</tspan><tspan font-size="9" dy="3">i</tspan><tspan dy="-3"> </tspan>with role metadata are indexed in ChromaDB.',
-    '(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated (account and role re-checked in the database), screened by an input guardrail (G1), matched by dense retrieval re-scored',
-    'with BM25 and fused with RRF, checked for context sufficiency (G2), reranked by a cross-encoder, answered by the configured LLM (OpenAI or Groq), and post-processed by output and hallucination',
-    'guardrails (G3, G4). Tokens, latency and status of every request are logged per user for the admin usage dashboard. (c) A golden dataset is run through the same components and scored by 14 DeepEval',
-    'metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.',
+    '(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated (account and role re-checked in the database), screened by an input guardrail (G1),',
+    'matched by dense retrieval re-scored with BM25 and fused with RRF, checked for context sufficiency (G2), reranked by a cross-encoder, and answered by the configured LLM',
+    '(OpenAI or Groq) whose tokens are streamed to the client; output and hallucination guardrails (G3, G4) post-process the answer (the disclaimer is streamed last).',
+    'Tokens, latency and status of every request are logged per user for the admin usage dashboard. (c) A golden dataset is run through the same components and scored',
+    'by 14 DeepEval metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.',
 ]
 for i, l in enumerate(cap):
     txt(36, 898 + i * 16, l, size=12.5, anchor="start")

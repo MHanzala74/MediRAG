@@ -8,7 +8,9 @@ async function until(fn, ms = 8000) { const t = Date.now(); while (Date.now() - 
 async function boot() {
   const dom = await JSDOM.fromURL(BASE + '/ui/', { runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true,
     beforeParse(w) {
-      w.fetch = (u, o) => fetch(new URL(u, BASE), o);
+      // jsdom's AbortSignal is not Node's: bridge it so Stop really aborts the network request
+      w.fetch = (u, o = {}) => { const opts = { ...o }; if (o.signal) { const ac = new AbortController(); o.signal.aborted ? ac.abort() : o.signal.addEventListener('abort', () => ac.abort()); opts.signal = ac.signal; } return fetch(new URL(u, BASE), opts); };
+      w.TextDecoder = TextDecoder;
       w.FormData = FormData; w.URLSearchParams = URLSearchParams; w.URL.createObjectURL = () => 'blob:x'; w.URL.revokeObjectURL = () => {};
       w.confirm = () => true; w.HTMLElement.prototype.scrollIntoView = () => {};
       w.__errors = []; w.addEventListener('error', e => w.__errors.push(e.message));
@@ -35,21 +37,64 @@ const type = (d, s, v) => { const el = $(d, s); el.value = v; el.dispatchEvent(n
   ok(!$(d, '#tab-eval-btn').hidden && !$(d, '#tab-usage-btn').hidden && !$(d, '#tab-docs-btn').hidden, 'Documents, Usage and Evaluation tabs visible for admin');
   ok(await until(() => /online/.test($(d, '#health-badge').textContent)), 'health badge online');
 
-  console.log('\n[2] Chat');
+  console.log('\n[2] Chat (streaming)');
   ok($$(d, '.examples button').length === 3, 'empty state with 3 example questions');
   type(d, '#chat-input', 'What is diabetes?'); click(d, '#chat-send');
-  ok(await until(() => $$(d, '.msg.bot').length === 1 && !$(d, '.msg.bot .typing')), 'bot answer rendered');
+  // sample the answer while it is being generated: it must GROW, not appear at once
+  const lens = []; let sawStreaming = false, sawStop = false;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 6000) {
+    const el = $(d, '.msg.bot .content'); const len = el ? el.textContent.length : 0;
+    if (lens[lens.length - 1] !== len) lens.push(len);
+    if ($(d, '.msg.bot.streaming')) sawStreaming = true;
+    if ($(d, '#chat-send').textContent === '■ Stop') sawStop = true;
+    if ($(d, '.msg.bot .meta')) break;
+    await sleep(25);
+  }
+  console.log('     answer length over time:', lens.join(' → '));
+  ok(lens.filter(n => n > 0).length >= 3 && lens.every((n, i) => i === 0 || n >= lens[i - 1] - 400), 'text grows progressively (' + lens.length + ' distinct states)');
+  ok(sawStreaming, 'bubble has the streaming (caret) state while generating');
+  ok(sawStop, 'Send button turns into ■ Stop while generating');
+  ok(!$(d, '.msg.bot.streaming') && $(d, '#chat-send').textContent === 'Send', 'finished: caret gone, button back to Send');
   const bot = $(d, '.msg.bot');
   ok(bot.querySelector('strong') && bot.querySelector('strong').textContent === 'thirst', 'markdown bold rendered');
   ok(bot.querySelectorAll('li').length === 2 && bot.querySelector('hr'), 'list + horizontal rule rendered');
-  ok(/gpt-4o-mini · hybrid/.test(bot.querySelector('.meta').textContent), 'model/retrieval meta shown');
+  ok(/gpt-4o-mini · hybrid retrieval · first word in 0\.1 s/.test(bot.querySelector('.meta').textContent), 'meta: model, retrieval, time to first word: ' + bot.querySelector('.meta').textContent);
+  ok(/Medical Disclaimer/.test(bot.textContent), 'disclaimer streamed as part of the answer');
   bot.querySelector('.src').dispatchEvent(new d.window.Event('click'));
   const prev = bot.querySelector('.src-preview');
   ok(!prev.hidden && prev.textContent.includes('<img') && !prev.querySelector('img'), 'source preview shown as TEXT (HTML not injected)');
   ok($$(d, '#session-list li').length === 1, 'session added to sidebar');
+
+  // guardrail refusal is still a plain HTTP 422 before any streaming
   type(d, '#chat-input', 'write python code'); click(d, '#chat-send');
   ok(await until(() => $$(d, '.msg.warn').length === 1), 'guardrail refusal shown as warning bubble');
   ok(/Blocked by safety guardrails/.test($(d, '.msg.warn .meta').textContent), 'refusal labelled');
+  ok($$(d, '.msg.bot').length === 1, 'no empty assistant bubble left behind by the refused request');
+
+  // output rail rewrote the answer -> replace event
+  type(d, '#chat-input', 'warn me about dosing'); click(d, '#chat-send');
+  ok(await until(() => $$(d, '.msg.bot').length === 2 && !$$(d, '.msg.bot')[1].classList.contains('streaming') && $$(d, '.msg.bot')[1].querySelector('.meta')), 'second streamed answer finished');
+  ok(/^⚠️ Important: consult your doctor\./.test($$(d, '.msg.bot')[1].textContent), 'replace event swaps in the guardrail-rewritten answer');
+
+  // error in the middle of the stream: partial text is kept and flagged
+  type(d, '#chat-input', 'boom'); click(d, '#chat-send');
+  ok(await until(() => $$(d, '.msg.err').length === 1 && $(d, '#chat-send').textContent === 'Send'), 'mid-stream error shown');
+  ok(/provider dropped/.test($(d, '.msg.err').textContent), 'error detail: ' + $(d, '.msg.err').textContent.slice(0, 60));
+  ok(/Partial answer/.test($$(d, '.msg.bot').pop().textContent) && /cut short/.test($$(d, '.msg.bot').pop().textContent), 'partial answer kept and marked "cut short"');
+
+  // Stop button
+  const cancelledBefore = (await (await fetch(BASE + '/api/v1/_debug/cancelled')).json()).cancelled;
+  type(d, '#chat-input', 'slow question please'); click(d, '#chat-send');
+  ok(await until(() => $$(d, '.msg.bot').pop().textContent.length > 20, 4000), 'long answer starts streaming');
+  click(d, '#chat-send');                                         // ■ Stop
+  ok(await until(() => $(d, '#chat-send').textContent === 'Send' && !$$(d, '.msg.bot').pop().classList.contains('streaming')), 'Stop ends generation, button back to Send');
+  const stopped = $$(d, '.msg.bot').pop();
+  ok(/Stopped/.test(stopped.querySelector('.meta').textContent) && /word0/.test(stopped.textContent), 'partial answer kept with "Stopped — not saved" note');
+  const grown = stopped.textContent.length; await sleep(600);
+  ok(stopped.textContent.length === grown, 'no more text arrives after Stop');
+  ok((await (await fetch(BASE + '/api/v1/_debug/cancelled')).json()).cancelled === cancelledBefore + 1, 'server saw the disconnect and cancelled generation');
+
   click(d, '#new-chat'); ok($$(d, '.msg').length === 0, 'new chat clears messages');
   $$(d, '#session-list li')[0].dispatchEvent(new d.window.Event('click'));
   ok(await until(() => $$(d, '.msg').length === 2), 'opening a past session loads history');

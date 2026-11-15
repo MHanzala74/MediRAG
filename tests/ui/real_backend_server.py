@@ -5,7 +5,7 @@ Only the RAG chain (needs an LLM) and document ingestion are stubbed.
     POSTGRES_PASSWORD=... python -m uvicorn tests.ui.real_backend_server:app --port 8766
     cd tests/ui && node ui_real_e2e.js
 """
-import sys, types
+import asyncio, sys, types
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -33,7 +33,28 @@ async def fake_chain(query, user_role, session_id):
             "model_used": "gpt-4o-mini-2024-07-18", "retrieval_method": "hybrid", "guardrail_passed": True,
             "provider": "openai", "usage": {"prompt_tokens": 1000, "completion_tokens": 200, "tokens_estimated": False}}
 
-chain = types.ModuleType("app.rag.chain"); chain.run_rag_chain = fake_chain; sys.modules["app.rag.chain"] = chain
+class Prepared:
+    def __init__(self):
+        self.inputs, self.method, self.n_docs, self.prompt_chars, self.blocked_result = {}, "hybrid", 1, 400, None
+        self.sources = [{"filename": "a.pdf", "doc_id": "d", "chunk_preview": "p"}]
+
+async def fake_prepare(query, user_role, session_id):
+    if "python" in query.lower():
+        raise GuardrailException("I can only assist with medical questions.")
+    return Prepared()
+
+async def fake_stream(query, session_id, prepared):
+    for w in ["Stub ", "answer", "."]:
+        await asyncio.sleep(0.05)
+        yield {"type": "token", "text": w}
+    yield {"type": "done", "result": {"answer": "Stub answer.", "sources": prepared.sources, "model_used": "gpt-4o-mini-2024-07-18",
+           "retrieval_method": "hybrid", "guardrail_passed": True, "provider": "openai",
+           "usage": {"prompt_tokens": 1000, "completion_tokens": 200, "tokens_estimated": False}}}
+
+chain = types.ModuleType("app.rag.chain")
+chain.run_rag_chain, chain.prepare_rag, chain.stream_rag = fake_chain, fake_prepare, fake_stream
+chain.llm_model_name = lambda: "gpt-4o-mini-2024-07-18"
+sys.modules["app.rag.chain"] = chain
 docs = types.ModuleType("app.api.v1.documents"); docs.router = APIRouter(); sys.modules["app.api.v1.documents"] = docs
 
 from app.api.v1 import api_router

@@ -9,7 +9,7 @@ const state = {
   token: null, user: null,
   sessionId: null, sessions: [], sending: false,
   opts: null, job: null, pollTimer: null, reportId: null,
-  usageTimer: null, usageUser: null,
+  usageTimer: null, usageUser: null, abort: null,
 };
 
 /* ───────────── helpers ───────────── */
@@ -51,23 +51,20 @@ function errMsg(data, fallback) {
   return fallback;
 }
 
-async function api(path, { method = 'GET', json, form, raw = false, noAuth = false } = {}) {
+async function api(path, { method = 'GET', json, form, raw = false, noAuth = false, signal } = {}) {
   const headers = {};
   if (state.token && !noAuth) headers.Authorization = 'Bearer ' + state.token;
   let body;
   if (json !== undefined) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(json); }
   else if (form) body = form;           // URLSearchParams / FormData set their own content type
-  const res = await fetch(API + path, { method, headers, body });
+  const res = await fetch(API + path, { method, headers, body, signal });
   if (res.status === 401 && !noAuth) {
     let msg = 'Your session expired. Please log in again.';
     try { const d = await res.json(); if (d && /disabled/i.test(d.detail || '')) msg = d.detail; } catch { /* keep default */ }
     logout(msg);
     throw new ApiError(401, msg);
   }
-  if (raw) {
-    if (!res.ok) throw new ApiError(res.status, `Request failed (${res.status})`);
-    return res;
-  }
+  if (raw && res.ok) return res;                       // caller reads the body (download / stream)
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
@@ -220,15 +217,21 @@ function renderMessages(list) {
 }
 function bubble(m) {
   const el = h('div', { class: `msg ${m.kind}` });
-  if (m.kind === 'user') el.append(h('p', { text: m.text }));
-  else el.append(renderMd(m.text));
+  const body = h('div', { class: 'content' });
+  if (m.kind === 'user') body.append(h('p', { text: m.text }));
+  else body.append(renderMd(m.text));
+  el.append(body);
+  decorate(el, m);
+  return el;
+}
+/* sources chips + meta line (also used when a streamed answer completes) */
+function decorate(el, m) {
   if (m.sources && m.sources.length) {
     const preview = h('div', { class: 'src-preview', hidden: true });
     el.append(h('div', { class: 'sources' }, m.sources.map(s => h('button', { class: 'src', type: 'button', text: '📄 ' + s.filename,
       onclick: () => { preview.hidden = false; preview.textContent = s.chunk_preview || '(no preview)'; } }))), preview);
   }
   if (m.meta) el.append(h('div', { class: 'meta', text: m.meta }));
-  return el;
 }
 function appendBubble(m) {
   const box = $('#messages');
@@ -236,28 +239,106 @@ function appendBubble(m) {
   const el = bubble(m); box.append(el); box.scrollTop = box.scrollHeight; return el;
 }
 function updateCount() { $('#char-count').textContent = $('#chat-input').value.length; }
+const raf = (fn) => (window.requestAnimationFrame || ((f) => setTimeout(f, 16)))(fn);
+
+/* Server-Sent Events over fetch (EventSource cannot send POST bodies or Authorization headers). */
+function parseFrames(buf) {
+  const events = []; let i;
+  buf = buf.replace(/\r\n/g, '\n');
+  while ((i = buf.indexOf('\n\n')) >= 0) {
+    const frame = buf.slice(0, i); buf = buf.slice(i + 2);
+    let name = 'message'; const data = [];
+    for (const line of frame.split('\n')) {
+      if (line.startsWith('event:')) name = line.slice(6).trim();
+      else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+    }
+    if (data.length) events.push({ event: name, data: JSON.parse(data.join('\n')) });
+  }
+  return { events, rest: buf };
+}
+async function* sseEvents(res) {
+  if (!res.body || !res.body.getReader) {                // very old browser: no streaming, parse it all at the end
+    yield* parseFrames((await res.text()) + '\n\n').events;
+    return;
+  }
+  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const out = parseFrames(buf); buf = out.rest;
+      yield* out.events;
+    }
+  } finally { try { reader.releaseLock(); } catch { /* already released */ } }
+}
+
+function setSending(on) {
+  state.sending = on;
+  const b = $('#chat-send');
+  b.textContent = on ? '■ Stop' : 'Send';
+  b.classList.toggle('danger', on);
+  b.title = on ? 'Stop generating' : '';
+  $('#messages').setAttribute('aria-busy', on ? 'true' : 'false');   // screen readers wait for the finished answer
+}
+function stopGenerating() { if (state.abort) state.abort.abort(); }
+
 async function sendMessage() {
+  if (state.sending) { stopGenerating(); return; }               // the button doubles as "Stop"
   const input = $('#chat-input'); const text = input.value.trim();
-  if (!text || state.sending) return;
-  state.sending = true; $('#chat-send').disabled = true;
+  if (!text) return;
+  setSending(true);
   input.value = ''; updateCount();
   appendBubble({ kind: 'user', text });
   if (!state.sessions.find(s => s.id === state.sessionId)) {
     state.sessions.unshift({ id: state.sessionId, title: text.slice(0, 40) }); saveSessions(); renderSessions();
   }
-  const typing = appendBubble({ kind: 'bot', text: '' });
-  typing.append(h('span', { class: 'typing' }, h('i'), h('i'), h('i')));
+  const msgEl = appendBubble({ kind: 'bot', text: '' });
+  const dots = h('span', { class: 'typing' }, h('i'), h('i'), h('i'));
+  msgEl.querySelector('.content').append(dots);
+  const box = $('#messages');
+  state.abort = new AbortController();
+
+  let answer = '', meta = null, final = null, painted = false;
+  const paint = () => {
+    painted = false;
+    const near = box.scrollHeight - box.scrollTop - box.clientHeight < 90;     // don't yank the view if the user scrolled up
+    const c = clear(msgEl.querySelector('.content')); c.append(renderMd(answer));
+    if (near) box.scrollTop = box.scrollHeight;
+  };
+  const schedule = () => { if (!painted) { painted = true; raf(paint); } };
+
   try {
-    const r = await api('/chat/query', { method: 'POST', json: { message: text, session_id: state.sessionId } });
-    typing.remove();
-    appendBubble({ kind: 'bot', text: r.answer, sources: r.sources, meta: `${r.model_used} · ${r.retrieval_method} retrieval` });
+    const res = await api('/chat/stream', { method: 'POST', json: { message: text, session_id: state.sessionId }, raw: true, signal: state.abort.signal });
+    for await (const { event, data } of sseEvents(res)) {
+      if (event === 'meta') meta = data;
+      else if (event === 'token') { if (!answer) msgEl.classList.add('streaming'); answer += data.text; schedule(); }
+      else if (event === 'replace') { answer = data.text; schedule(); }
+      else if (event === 'done') final = data;
+      else if (event === 'error') throw new ApiError(500, data.detail || 'Generation failed');
+    }
+    if (final) {                                              // authoritative text = exactly what the server saved
+      answer = final.answer; paint(); msgEl.classList.remove('streaming');
+      const ft = final.first_token_ms != null ? ` · first word in ${(final.first_token_ms / 1000).toFixed(1)} s` : '';
+      decorate(msgEl, { kind: 'bot', sources: final.sources, meta: final.guardrail_passed
+        ? `${final.model_used} · ${final.retrieval_method} retrieval${ft}` : 'Blocked by safety guardrails' });
+      if (!final.guardrail_passed) msgEl.classList.add('warn');
+    } else if (!answer) { msgEl.remove(); }
   } catch (e) {
-    typing.remove();
-    if (e.status === 401) return;
-    const refused = e.status === 422 && e.data && typeof e.data.detail === 'string';
-    appendBubble({ kind: refused ? 'warn' : 'err', text: refused ? e.message : `Something went wrong: ${e.message}`,
-      meta: refused ? 'Blocked by safety guardrails' : '' });
-  } finally { state.sending = false; $('#chat-send').disabled = false; input.focus(); }
+    dots.remove(); msgEl.classList.remove('streaming');
+    if (e.name === 'AbortError') {                            // user pressed Stop
+      paint();
+      if (!answer) msgEl.remove();
+      else decorate(msgEl, { kind: 'bot', meta: 'Stopped — this partial answer was not saved to your chat history.' });
+    } else if (e.status === 401) { /* api() already signed the user out */ }
+    else {
+      const refused = e.status === 422 && e.data && typeof e.data.detail === 'string';
+      if (answer) { paint(); decorate(msgEl, { kind: 'bot', meta: 'The answer was cut short.' }); }
+      else msgEl.remove();
+      appendBubble({ kind: refused ? 'warn' : 'err', text: refused ? e.message : `Something went wrong: ${e.message}`,
+        meta: refused ? 'Blocked by safety guardrails' : '' });
+    }
+  } finally { state.abort = null; setSending(false); input.focus(); }
 }
 
 /* ───────────── documents ───────────── */
@@ -309,7 +390,7 @@ function renderUsageKpis(s) {
   box.append(
     k('Registered users', nf(u.regular), `+ ${u.admins} admin${u.admins === 1 ? '' : 's'}${u.disabled ? ` · ${u.disabled} disabled` : ''}`),
     k('Active users', nf(t.active_users), 'sent ≥ 1 request in range'),
-    k('Requests', nf(t.requests), `${nf(t.blocked)} blocked · ${nf(t.errors)} errors`),
+    k('Requests', nf(t.requests), `${nf(t.blocked)} blocked · ${nf(t.errors)} errors` + (t.cancelled ? ` · ${nf(t.cancelled)} stopped` : '')),
     k('LLM tokens', nf(t.total_tokens), `${nf(t.prompt_tokens)} in · ${nf(t.completion_tokens)} out`),
     k('Est. LLM cost', usd(t.cost_usd), t.unpriced_requests ? `${t.unpriced_requests} request(s) on an unpriced model` : 'estimate'),
     k('Avg response time', ms(t.avg_latency_ms), 'successful answers'));
@@ -357,7 +438,7 @@ function renderRecent(rows) {
   if (!rows.length) { tb.append(h('tr', {}, h('td', { colspan: 7, class: 'muted', text: 'No requests yet.' }))); return; }
   for (const r of rows)
     tb.append(h('tr', {}, h('td', { text: when(r.created_at) }), h('td', { text: r.username }),
-      h('td', {}, h('span', { class: 'pill ' + (r.status === 'ok' ? 'good' : r.status === 'blocked' ? 'na' : 'bad'), text: r.status })),
+      h('td', {}, h('span', { class: 'pill ' + (r.status === 'ok' ? 'good' : (r.status === 'blocked' || r.status === 'cancelled') ? 'na' : 'bad'), text: r.status === 'cancelled' ? 'stopped' : r.status })),
       h('td', { text: r.model === '-' ? '—' : r.model }), h('td', { class: 'num', text: nf(r.total_tokens) }),
       h('td', { class: 'num', text: ms(r.latency_ms) }), h('td', { class: 'num', text: usd(r.cost_usd) })));
 }

@@ -113,9 +113,11 @@
 <text x="946.0" y="361.0" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">Provider from config</text>
 <text x="946.0" y="373.5" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">(PRIMARY_LLM, T = 0)</text>
 <rect x="876" y="390" width="140" height="36" rx="4" fill="#ffffff" stroke="#8a8a8a" stroke-width="0.9"/>
-<text x="946.0" y="412" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">OpenAI: GPT-4o-mini</text>
+<text x="946.0" y="405.0" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">OpenAI GPT-4o-mini or</text>
+<text x="946.0" y="417.5" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">Groq Llama-3.3-70B</text>
 <rect x="876" y="434" width="140" height="36" rx="4" fill="#ffffff" stroke="#8a8a8a" stroke-width="0.9"/>
-<text x="946.0" y="456" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">or Groq: Llama-3.3-70B</text>
+<text x="946.0" y="449.0" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">Token streaming (SSE)</text>
+<text x="946.0" y="461.5" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">to the web UI</text>
 <rect x="1070" y="262" width="160" height="226" rx="7" fill="#FBE9E7" stroke="#A8433A" stroke-width="1.3"/>
 <text x="1150.0" y="284" font-size="13" font-weight="bold" font-style="normal" text-anchor="middle" fill="#1a1a1a">6  Output G3 / G4</text>
 <line x1="1080" y1="292" x2="1220" y2="292" stroke="#A8433A" stroke-width="0.8"/>
@@ -126,7 +128,7 @@
 <rect x="1080" y="390" width="140" height="36" rx="4" fill="#ffffff" stroke="#8a8a8a" stroke-width="0.9"/>
 <text x="1150.0" y="412" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">Append disclaimer</text>
 <rect x="1080" y="434" width="140" height="36" rx="4" fill="#ffffff" stroke="#A8433A" stroke-width="0.9" stroke-dasharray="3 2"/>
-<text x="1150.0" y="449.0" font-size="10.5" font-weight="normal" font-style="italic" text-anchor="middle" fill="#1a1a1a">output: answer a</text>
+<text x="1150.0" y="449.0" font-size="10.5" font-weight="normal" font-style="italic" text-anchor="middle" fill="#1a1a1a">output: streamed answer a</text>
 <text x="1150.0" y="461.5" font-size="10.5" font-weight="normal" font-style="italic" text-anchor="middle" fill="#1a1a1a">+ cited sources</text>
 <polyline points="210,374 254,374" fill="none" stroke="#222" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="232.0" y="362" font-size="12" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a"><tspan font-style="italic">q</tspan></text>
@@ -219,8 +221,9 @@
 <polyline points="334,556 334,620" fill="none" stroke="#666" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ag)"/>
 <text x="344" y="596" font-size="11" font-weight="normal" font-style="italic" text-anchor="start" fill="#555">re-uses the components of (b)</text>
 <text x="36" y="898" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a"><tspan font-weight="bold">Figure 1.</tspan> Architecture of MediRAG. (a) Offline: admin-uploaded PDFs are parsed, chunked and embedded; chunks <tspan font-style="italic">c</tspan><tspan font-size="9" dy="3">i</tspan><tspan dy="-3"> </tspan>with role metadata are indexed in ChromaDB.</text>
-<text x="36" y="914" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated (account and role re-checked in the database), screened by an input guardrail (G1), matched by dense retrieval re-scored</text>
-<text x="36" y="930" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">with BM25 and fused with RRF, checked for context sufficiency (G2), reranked by a cross-encoder, answered by the configured LLM (OpenAI or Groq), and post-processed by output and hallucination</text>
-<text x="36" y="946" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">guardrails (G3, G4). Tokens, latency and status of every request are logged per user for the admin usage dashboard. (c) A golden dataset is run through the same components and scored by 14 DeepEval</text>
-<text x="36" y="962" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.</text>
+<text x="36" y="914" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated (account and role re-checked in the database), screened by an input guardrail (G1),</text>
+<text x="36" y="930" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">matched by dense retrieval re-scored with BM25 and fused with RRF, checked for context sufficiency (G2), reranked by a cross-encoder, and answered by the configured LLM</text>
+<text x="36" y="946" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">(OpenAI or Groq) whose tokens are streamed to the client; output and hallucination guardrails (G3, G4) post-process the answer (the disclaimer is streamed last).</text>
+<text x="36" y="962" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">Tokens, latency and status of every request are logged per user for the admin usage dashboard. (c) A golden dataset is run through the same components and scored</text>
+<text x="36" y="978" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">by 14 DeepEval metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.</text>
 </svg>

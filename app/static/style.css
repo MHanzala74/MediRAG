@@ -142,3 +142,9 @@ legend{font-size:13px;font-weight:600;padding:0 6px}
 #us-users th,#us-users td{white-space:nowrap;font-size:13px}
 #us-users td.u{cursor:pointer;font-weight:600}#us-users td.u:hover{text-decoration:underline}
 @media(max-width:860px){.grid-usage{grid-template-columns:1fr}}
+
+/* streaming caret */
+.msg.streaming .content > :last-child::after{content:"▍";margin-left:2px;animation:blink 1s steps(2,start) infinite;color:var(--muted)}
+@keyframes blink{to{visibility:hidden}}
+@media (prefers-reduced-motion:reduce){.msg.streaming .content > :last-child::after{animation:none}.typing i{animation:none;opacity:.6}}
+.btn.danger{border-color:var(--bad)}

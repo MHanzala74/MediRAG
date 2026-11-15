@@ -50,6 +50,7 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 | Feature | Details |
 |---|---|
 | 🤖 Two LLM providers | OpenAI gpt-4o-mini **or** Groq llama-3.3-70b, chosen at startup by `PRIMARY_LLM` (Groq is used when no OpenAI key is set); no automatic runtime failover |
+| ⚡ Streaming answers | The chat shows the answer word by word as it is generated (Server-Sent Events), with a **Stop** button |
 | 📊 Usage dashboard | Admin sees users, requests per user, tokens and estimated LLM cost; can disable accounts |
 | 🔍 Hybrid Search | Semantic (ChromaDB) + BM25 keyword + RRF fusion |
 | 🎯 Reranking | Cross-encoder ms-marco-MiniLM — reduces hallucination |
@@ -74,7 +75,8 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 | `POST` | `/api/v1/auth/login` | — | Login → JWT token |
 | `POST` | `/api/v1/documents/upload` | Admin | Upload PDF |
 | `GET` | `/api/v1/documents/list` | Admin | List all documents |
-| `POST` | `/api/v1/chat/query` | User | Ask a medical question |
+| `POST` | `/api/v1/chat/query` | User | Ask a medical question (complete answer in one JSON response) |
+| `POST` | `/api/v1/chat/stream` | User | Same, but streamed token by token (`text/event-stream`) — used by the web UI |
 | `GET` | `/api/v1/chat/history/{session_id}` | User | Get chat history |
 | `GET` | `/api/v1/admin/usage/summary?days=7` | Admin | KPIs, requests per day, per-model totals |
 | `GET` | `/api/v1/admin/usage/users?days=7` | Admin | Every user: requests, tokens, est. cost, last login |
@@ -154,7 +156,7 @@ Open **http://localhost:8000**. The first start is slower: PostgreSQL tables are
 
 1. **Sign up** as *User* (no code needed) and log in. Every request needs a valid login; an admin can disable your account at any time (you are then signed out immediately).
 2. Users only **chat** — they never see Documents, Usage or Evaluation. **Chat tab** → type a medical question (or click an example). You get:
-   - an answer built **only from the documents you have access to**, ending with a medical disclaimer;
+   - an answer that **appears word by word** while it is being written, built **only from the documents you have access to**, ending with a medical disclaimer. Press **■ Stop** to cancel it (the partial answer is shown but not saved to your history);
    - **source chips** — click one to see the passage that was used;
    - a refusal bubble (yellow) if the safety guardrails block the request (off-topic, harmful, crisis…).
 3. **New chat** starts a fresh conversation; earlier chats stay in the sidebar of that browser.
@@ -213,11 +215,32 @@ curl -X POST $BASE/chat/query -H "Authorization: Bearer $TOKEN" -H 'Content-Type
      -d '{"message":"What are the symptoms of diabetes?","session_id":"demo-1"}'
 ```
 
+**Streaming:** `POST /chat/stream` takes the same body but answers with Server-Sent Events:
+
+```bash
+curl -N -X POST $BASE/chat/stream -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"message":"What are the symptoms of diabetes?","session_id":"demo-2"}'
+```
+
+| Event | Data | Meaning |
+|---|---|---|
+| `meta` | `session_id, sources, retrieval_method, model_used` | first frame, sent once retrieval is done |
+| `token` | `text` | next piece of the answer (the medical disclaimer arrives as the last token) |
+| `replace` | `text` | rare: the output guardrail rewrote the answer, show this text instead of what was streamed |
+| `done` | `answer, sources, model_used, guardrail_passed, first_token_ms, total_ms` | final, authoritative answer — exactly what is saved to history |
+| `error` | `detail` | generation failed after streaming started (partial text may have been sent) |
+
+Authentication (401), session ownership (403) and input-guardrail refusals (422) are ordinary HTTP errors returned *before* any
+streaming starts. If the client disconnects, the LLM call is cancelled, nothing is saved to chat history, and the request shows as *stopped* in the Usage tab.
+
 Admin-only calls (`/documents/upload`, `/documents/list`, `/admin/usage/*`, `/evaluation/*`) need an admin token — see the interactive docs at `/docs`.
 
 ### 7 · Good to know
 
 - This is an **educational tool, not medical advice**; answers are limited to your uploaded documents.
+- **Streaming and the output guardrail:** the output rail needs the *complete* answer, so it runs after the last token. Normally it only appends the disclaimer (streamed last). If it adds a safety warning to the *start* of the answer, the page first shows the raw text and then swaps in the final text (`replace` event). Evaluation runs always use the complete, non-streamed answer.
+- Behind a reverse proxy, disable response buffering for `/api/v1/chat/stream` (the app sends `X-Accel-Buffering: no`; for nginx also `proxy_buffering off;`), otherwise the answer arrives all at once.
+- Stopped answers are logged with an *estimated* token count (the provider never reports usage for a cancelled call) and count towards the estimated cost.
 - Evaluation test cases run with the dataset's `role` (default `user`), so only documents tagged *Everyone* are evaluated.
 - Evaluation job *status* lives in memory (lost on restart); finished *reports* are files and persist.
 - Hybrid retrieval re-scores the dense (ChromaDB) candidates with BM25 and fuses both rankings with RRF; BM25 does not search the whole corpus independently.
@@ -375,7 +398,7 @@ MediRAG/
 │   │   └── v1/
 │   │       ├── __init__.py        # Router aggregator
 │   │       ├── auth.py            # Signup, login (JWT)
-│   │       ├── chat.py            # POST /chat/query, GET /chat/history
+│   │       ├── chat.py            # POST /chat/query, POST /chat/stream (SSE), GET /chat/history
 │   │       ├── documents.py       # POST /documents/upload, GET /list (admin only)
 │   │       ├── admin.py           # Usage analytics + enable/disable users (admin only)
 │   │       ├── evaluation.py      # DeepEval runs, datasets, reports (admin only)
@@ -404,6 +427,7 @@ MediRAG/
 │   │   ├── ingestion.py           # PDF → chunks → ChromaDB
 │   │   ├── llm_router.py          # OpenAI / Groq selection (config-time)
 │   │   ├── llm_usage.py           # Read token usage from LLM replies
+│   │   ├── streaming.py           # Token streaming core (output-rail aware)
 │   │   └── vectorstore.py         # ChromaDB singleton
 │   ├── schemas/
 │   │   ├── auth.py                # SignupRequest, TokenResponse

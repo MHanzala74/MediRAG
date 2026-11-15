@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Form, UploadFile, File, Header
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
+import json
 for m in ("auth", "documents", "chat"):
     mod = types.ModuleType(f"app.api.v1.{m}"); mod.router = APIRouter(); sys.modules[f"app.api.v1.{m}"] = mod
 from app.api.v1.evaluation import router as eval_router
@@ -78,6 +80,40 @@ def chat(body: dict, user=Depends(get_current_user)):
     return {"answer": "Diabetes causes **thirst**.\n\n- item one\n- item two\n\n---\n⚠️ **Medical Disclaimer:** see a doctor.",
             "sources": [{"filename": "diabetes.pdf", "doc_id": "d1", "chunk_preview": "Preview text <img src=x onerror=alert(1)>"}],
             "session_id": body["session_id"], "model_used": "gpt-4o-mini", "retrieval_method": "hybrid", "guardrail_passed": True}
+
+DEBUG = {"cancelled": 0}
+def sse(ev, d): return f"event: {ev}\ndata: {json.dumps(d)}\n\n"
+
+@api.post("/chat/stream")
+async def chat_stream(body: dict, user=Depends(get_current_user)):
+    msg = body["message"].lower()
+    if "python" in msg: raise HTTPException(422, "I can only assist with medical questions.")
+    sources = [{"filename": "diabetes.pdf", "doc_id": "d1", "chunk_preview": "Preview text <img src=x onerror=alert(1)>"}]
+    if "slow" in msg: tokens = [f"word{i} " for i in range(80)]
+    elif "boom" in msg: tokens = ["Partial ", "answer "]
+    else: tokens = ["Diabetes ", "causes ", "**thirst**", ".\n\n- item one\n- item two\n\n---\n⚠️ **Medical Disclaimer:** see a doctor."]
+    async def gen():
+        try:
+            yield sse("meta", {"session_id": body["session_id"], "sources": sources, "retrieval_method": "hybrid", "model_used": "gpt-4o-mini"})
+            for t in tokens:
+                await asyncio.sleep(0.12)
+                yield sse("token", {"text": t})
+            if "boom" in msg:
+                yield sse("error", {"detail": "provider dropped the connection"}); return
+            answer = "".join(tokens)
+            if "warn" in msg:
+                answer = "⚠️ **Important:** consult your doctor.\n\n" + answer
+                yield sse("replace", {"text": answer})
+            yield sse("done", {"answer": answer, "sources": sources, "model_used": "gpt-4o-mini", "retrieval_method": "hybrid",
+                               "guardrail_passed": True, "first_token_ms": 130, "total_ms": 600})
+        except (asyncio.CancelledError, GeneratorExit):
+            DEBUG["cancelled"] += 1
+            raise
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+@api.get("/_debug/cancelled")
+def debug_cancelled(): return DEBUG
+
 @api.get("/chat/history/{sid}")
 def hist(sid: str, user=Depends(get_current_user)): return {"session_id": sid, "history": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]}
 @api.get("/documents/list")
