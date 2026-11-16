@@ -44,8 +44,9 @@ async def fake_prepare(query, user_role, session_id):
     return Prepared()
 
 async def fake_stream(query, session_id, prepared):
-    for w in ["Stub ", "answer", "."]:
-        await asyncio.sleep(0.05)
+    words = [f"w{i} " for i in range(40)] if "slow" in query.lower() else ["Stub ", "answer", "."]
+    for w in words:
+        await asyncio.sleep(0.1 if "slow" in query.lower() else 0.05)
         yield {"type": "token", "text": w}
     yield {"type": "done", "result": {"answer": "Stub answer.", "sources": prepared.sources, "model_used": "gpt-4o-mini-2024-07-18",
            "retrieval_method": "hybrid", "guardrail_passed": True, "provider": "openai",
