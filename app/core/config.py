@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     docs_upload_dir: str   = "./docs_store"
     chunk_size: int        = 600
     chunk_overlap: int     = 120
+    table_chunk_size: int  = 1800          # tables get more room; split by rows (header repeated) beyond this
+    max_upload_mb: int     = 50
+    # Document parsing: fast = pypdf (text PDFs only) · deep = Docling (layout, tables, OCR, DOCX/PPTX/HTML/images)
+    #                   auto = pypdf first, Docling when the PDF looks scanned (needs Docling installed)
+    parser: Literal["auto", "fast", "deep"] = "auto"
+    parser_scanned_min_chars: int = 40     # avg extractable chars/page below which a PDF counts as scanned
+    docling_ocr: bool      = True
+    docling_tables: bool   = True
+    docling_models_dir: str = ""           # offline model folder (see scripts/download_docling_models.py)
+    docling_timeout_s: int = 900           # per-document time limit
     retriever_k: int       = 6          # initial retrieval count
     reranker_top_n: int    = 3          # after reranking
     use_hybrid_search: bool = True
