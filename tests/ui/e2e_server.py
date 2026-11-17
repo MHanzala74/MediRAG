@@ -116,9 +116,13 @@ def debug_cancelled(): return DEBUG
 
 @api.get("/chat/history/{sid}")
 def hist(sid: str, user=Depends(get_current_user)): return {"session_id": sid, "history": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]}
+@api.get("/documents/capabilities")
+def doc_caps(user=Depends(admin_only)):
+    return {"docling_installed": True, "extensions": [".docx", ".pdf", ".png"], "modes": ["auto", "fast", "deep"], "default_mode": "auto", "max_upload_mb": 50}
 @api.get("/documents/list")
 def docs(user=Depends(admin_only)):
-    return {"total": 1, "documents": [{"doc_id": "d1", "filename": "diabetes.pdf", "role": "user", "chunk_count": 42, "uploaded_by": "admin_one", "created_at": "2026-11-14T10:00:00"}]}
+    return {"total": 1, "documents": [{"doc_id": "d1", "filename": "diabetes.pdf", "role": "user", "chunk_count": 42, "uploaded_by": "admin_one",
+            "created_at": "2026-11-14T10:00:00", "status": "ready", "error": None, "note": None, "pages": 12, "parser": "pypdf"}]}
 @api.post("/documents/upload")
 async def upload(file: UploadFile = File(...), role: str = Form(...), user=Depends(admin_only)):
     return {"doc_id": "d2", "filename": file.filename, "role": role, "chunk_count": 7, "message": "ok"}

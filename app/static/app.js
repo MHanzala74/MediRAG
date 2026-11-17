@@ -9,7 +9,7 @@ const state = {
   token: null, user: null,
   sessionId: null, sessions: [], sending: false,
   opts: null, job: null, pollTimer: null, reportId: null,
-  usageTimer: null, usageUser: null, abort: null,
+  usageTimer: null, usageUser: null, abort: null, docsTimer: null, docCaps: null,
 };
 
 /* ───────────── helpers ───────────── */
@@ -142,7 +142,7 @@ async function submitAuth() {
   } finally { btn.disabled = false; }
 }
 function logout(message) {
-  stopPolling(); clearInterval(state.usageTimer); state.usageTimer = null;
+  stopPolling(); clearInterval(state.usageTimer); state.usageTimer = null; clearInterval(state.docsTimer); state.docsTimer = null;
   state.token = null; state.user = null;
   sessionStorage.removeItem('medirag:auth');
   $('#app-view').hidden = true; $('#auth-view').hidden = false;
@@ -164,7 +164,8 @@ function switchTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
   for (const t of ['chat', 'docs', 'usage', 'eval']) $('#tab-' + t).hidden = t !== name;
   clearInterval(state.usageTimer); state.usageTimer = null;
-  if (name === 'docs') loadDocs();
+  clearInterval(state.docsTimer); state.docsTimer = null;
+  if (name === 'docs') { loadDocCaps(); loadDocs(); }
   if (name === 'usage') { loadUsage(); state.usageTimer = setInterval(loadUsage, 30000); }
   if (name === 'eval') loadEval();
 }
@@ -228,8 +229,8 @@ function bubble(m) {
 function decorate(el, m) {
   if (m.sources && m.sources.length) {
     const preview = h('div', { class: 'src-preview', hidden: true });
-    el.append(h('div', { class: 'sources' }, m.sources.map(s => h('button', { class: 'src', type: 'button', text: '📄 ' + s.filename,
-      onclick: () => { preview.hidden = false; preview.textContent = s.chunk_preview || '(no preview)'; } }))), preview);
+    el.append(h('div', { class: 'sources' }, m.sources.map(s => h('button', { class: 'src', type: 'button', text: '📄 ' + s.filename + (s.page ? ' · p.' + s.page : ''),
+      title: s.section || '', onclick: () => { preview.hidden = false; preview.textContent = (s.section ? s.section + ' — ' : '') + (s.chunk_preview || '(no preview)'); } }))), preview);
   }
   if (m.meta) el.append(h('div', { class: 'meta', text: m.meta }));
 }
@@ -341,29 +342,57 @@ async function sendMessage() {
   } finally { state.abort = null; setSending(false); input.focus(); }
 }
 
-/* ───────────── documents ───────────── */
+/* ───────────── documents (admin) ───────────── */
+async function loadDocCaps() {
+  try { state.docCaps = await api('/documents/capabilities'); } catch { return; }
+  const c = state.docCaps;
+  $('#doc-file').setAttribute('accept', c.extensions.join(','));
+  $('#doc-types').textContent = `Allowed: ${c.extensions.join(' ')} · max ${c.max_upload_mb} MB`;
+  $('#doc-parser').value = c.default_mode;
+  const deep = $('#doc-parser').querySelector('option[value=deep]');
+  deep.disabled = !c.docling_installed;
+  const note = $('#doc-docling-note');
+  note.hidden = c.docling_installed;
+  note.textContent = 'Docling is not installed on the server: scanned PDFs, tables, DOCX / PPTX / HTML / images are unavailable. See the README ("Document parsing").';
+}
+const STATUS_CLASS = { ready: 'good', processing: 'na', failed: 'bad' };
 async function loadDocs() {
   const tb = clear($('#docs-table tbody'));
-  try {
-    const r = await api('/documents/list');
-    $('#docs-empty').hidden = r.documents.length > 0;
-    for (const d of r.documents)
-      tb.append(h('tr', {}, h('td', { text: d.filename }),
-        h('td', {}, h('span', { class: 'badge', text: d.role === 'admin' ? 'Admins only' : 'Everyone' })),
-        h('td', { text: d.chunk_count }), h('td', { text: d.uploaded_by }), h('td', { text: when(d.created_at) })));
-  } catch (e) { toast(e.message); }
+  let docs;
+  try { docs = (await api('/documents/list')).documents; } catch (e) { if (e.status !== 401) toast(e.message); return; }
+  $('#docs-empty').hidden = docs.length > 0;
+  for (const d of docs) {
+    const fileCell = h('td', {}, d.filename,
+      d.note ? h('div', { class: 'small muted', text: d.note }) : null,
+      d.status === 'failed' && d.error ? h('div', { class: 'small', style: 'color:var(--bad)', text: d.error }) : null);
+    tb.append(h('tr', {}, fileCell,
+      h('td', {}, h('span', { class: 'badge', text: d.role === 'admin' ? 'Admins only' : 'Everyone' })),
+      h('td', {}, h('span', { class: 'pill ' + (STATUS_CLASS[d.status] || 'na'), text: d.status === 'processing' ? 'processing…' : d.status })),
+      h('td', { text: d.pages ?? '—' }), h('td', { text: d.parser || '—' }), h('td', { text: d.status === 'ready' ? d.chunk_count : '—' }),
+      h('td', { text: d.uploaded_by }), h('td', { text: when(d.created_at) }),
+      h('td', {}, d.status === 'processing' ? null : h('button', { class: 'btn danger', type: 'button', text: 'Delete', onclick: () => deleteDoc(d) }))));
+  }
+  // keep refreshing while anything is still being parsed
+  const busy = docs.some(d => d.status === 'processing');
+  if (busy && !state.docsTimer) state.docsTimer = setInterval(loadDocs, 3000);
+  if (!busy && state.docsTimer) { clearInterval(state.docsTimer); state.docsTimer = null; }
 }
 async function uploadDoc() {
   const file = $('#doc-file').files[0]; const st = $('#upload-status');
-  if (!file) { st.textContent = 'Choose a PDF first.'; return; }
-  const fd = new FormData(); fd.append('file', file); fd.append('role', $('#doc-role').value);
-  $('#doc-upload').disabled = true; st.textContent = 'Uploading and indexing… large PDFs can take a minute.';
+  if (!file) { st.textContent = 'Choose a file first.'; return; }
+  const fd = new FormData(); fd.append('file', file); fd.append('role', $('#doc-role').value); fd.append('parser', $('#doc-parser').value);
+  $('#doc-upload').disabled = true; st.textContent = 'Uploading…';
   try {
     const r = await api('/documents/upload', { method: 'POST', form: fd });
-    st.textContent = `Indexed “${r.filename}” into ${r.chunk_count} chunks.`;
-    $('#doc-file').value = ''; loadDocs();
+    st.textContent = `“${r.filename}” received — it is being parsed in the background; this page updates by itself.`;
+    $('#doc-file').value = ''; await loadDocs();
   } catch (e) { st.textContent = 'Upload failed: ' + e.message; }
   finally { $('#doc-upload').disabled = false; }
+}
+async function deleteDoc(d) {
+  if (!confirm(`Delete “${d.filename}”? It will be removed from search and the answers can no longer cite it.`)) return;
+  try { await api('/documents/' + encodeURIComponent(d.doc_id), { method: 'DELETE' }); toast('Deleted'); loadDocs(); }
+  catch (e) { toast(e.message); }
 }
 
 /* ───────────── usage dashboard (admin) ───────────── */

@@ -1,68 +1,60 @@
 """
-UI ↔ REAL backend: real auth, JWT, admin/usage API, usage logging and PostgreSQL.
-Only the RAG chain (needs an LLM) and document ingestion are stubbed.
+UI ↔ the REAL application: `main.app` with every router, real PostgreSQL, real ChromaDB, real parsing /
+chunking / retrieval / guardrail-fallback / chain / streaming / usage logging.
+Only the LLM (echoes the passages it receives) and the embedding model are fake.
 
     POSTGRES_PASSWORD=... python -m uvicorn tests.ui.real_backend_server:app --port 8766
-    cd tests/ui && node ui_real_e2e.js
+    cd tests/ui && node ui_real_e2e.js        # uploads /tmp/medirag_ui_sample.pdf through the UI
 """
-import asyncio, sys, types
+import io
+import sys
+import tempfile
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 import psycopg2
-from fastapi import APIRouter, FastAPI
-from fastapi.staticfiles import StaticFiles
+from langchain_community.vectorstores import Chroma
+from langchain_core.embeddings import DeterministicFakeEmbedding
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 from app.core.config import settings
-from app.utils.exceptions import GuardrailException
 
-# fresh database for this run
+# fresh database + folders for this run
 admin = psycopg2.connect(host=settings.postgres_host, port=settings.postgres_port, user=settings.postgres_user,
                          password=settings.postgres_password, dbname="postgres")
 admin.autocommit = True
 admin.cursor().execute('DROP DATABASE IF EXISTS "medirag_ui_e2e" WITH (FORCE)')
 admin.cursor().execute('CREATE DATABASE "medirag_ui_e2e"')
+tmp = Path(tempfile.mkdtemp())
 settings.postgres_db = "medirag_ui_e2e"
-settings.admin_signup_code = ""        # development mode: admin signup allowed without a code
+settings.admin_signup_code = ""                 # development mode: admin signup allowed without a code
+settings.use_reranker = False                   # cross-encoder weights are downloaded from HuggingFace
+settings.docs_upload_dir = str(tmp / "uploads")
 
-async def fake_chain(query, user_role, session_id):
-    if "python" in query.lower():
-        raise GuardrailException("I can only assist with medical questions.")
-    return {"answer": "Stub answer.", "sources": [{"filename": "a.pdf", "doc_id": "d", "chunk_preview": "p"}],
-            "model_used": "gpt-4o-mini-2024-07-18", "retrieval_method": "hybrid", "guardrail_passed": True,
-            "provider": "openai", "usage": {"prompt_tokens": 1000, "completion_tokens": 200, "tokens_estimated": False}}
+# a small two-page PDF for the browser test to upload
+buf = io.BytesIO()
+c = canvas.Canvas(buf, pagesize=A4)
+for line in ("Diabetes causes increased thirst and frequent urination.", "Hypertension: the blood pressure target is below 130/80 mmHg."):
+    c.drawString(72, 780, line)
+    c.showPage()
+c.save()
+Path("/tmp/medirag_ui_sample.pdf").write_bytes(buf.getvalue())
 
-class Prepared:
-    def __init__(self):
-        self.inputs, self.method, self.n_docs, self.prompt_chars, self.blocked_result = {}, "hybrid", 1, 400, None
-        self.sources = [{"filename": "a.pdf", "doc_id": "d", "chunk_preview": "p"}]
+import app.rag.chain as chain
+import app.rag.ingestion as ingestion
+import app.rag.llm_router as router
+import app.rag.vectorstore as vstore
+from tests.fakes import ContextEchoModel
 
-async def fake_prepare(query, user_role, session_id):
-    if "python" in query.lower():
-        raise GuardrailException("I can only assist with medical questions.")
-    return Prepared()
+store = Chroma(collection_name="ui_e2e", embedding_function=DeterministicFakeEmbedding(size=64), persist_directory=str(tmp / "chroma"))
+llm = ContextEchoModel()
+vstore.get_vectorstore = lambda: store
+ingestion.get_vectorstore = lambda: store
+chain.get_vectorstore = lambda: store
+chain.get_llm = lambda: llm
+router.get_llm = lambda: llm
 
-async def fake_stream(query, session_id, prepared):
-    words = [f"w{i} " for i in range(40)] if "slow" in query.lower() else ["Stub ", "answer", "."]
-    for w in words:
-        await asyncio.sleep(0.1 if "slow" in query.lower() else 0.05)
-        yield {"type": "token", "text": w}
-    yield {"type": "done", "result": {"answer": "Stub answer.", "sources": prepared.sources, "model_used": "gpt-4o-mini-2024-07-18",
-           "retrieval_method": "hybrid", "guardrail_passed": True, "provider": "openai",
-           "usage": {"prompt_tokens": 1000, "completion_tokens": 200, "tokens_estimated": False}}}
-
-chain = types.ModuleType("app.rag.chain")
-chain.run_rag_chain, chain.prepare_rag, chain.stream_rag = fake_chain, fake_prepare, fake_stream
-chain.llm_model_name = lambda: "gpt-4o-mini-2024-07-18"
-sys.modules["app.rag.chain"] = chain
-docs = types.ModuleType("app.api.v1.documents"); docs.router = APIRouter(); sys.modules["app.api.v1.documents"] = docs
-
-from app.api.v1 import api_router
-from app.db.database import init_pool
-from app.db.models import create_tables
-
-init_pool(); create_tables()
-app = FastAPI()
-app.include_router(api_router, prefix="/api/v1")
-app.mount("/ui", StaticFiles(directory=ROOT / "app/static", html=True), name="ui")
+from main import app  # noqa: E402  (the real application, UI included)

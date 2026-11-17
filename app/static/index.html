@@ -78,20 +78,29 @@
         <section class="card" id="upload-card">
           <h2>Upload a document</h2>
           <div class="stack">
-            <label>PDF file <input id="doc-file" type="file" accept="application/pdf,.pdf"></label>
+            <label>File <input id="doc-file" type="file"></label>
+            <div id="doc-types" class="hint"></div>
             <label>Who can use it?
               <select id="doc-role">
                 <option value="user">Everyone — users and admins</option>
                 <option value="admin">Admins only</option>
               </select>
             </label>
-            <button id="doc-upload" class="btn primary" type="button">Upload &amp; index</button>
+            <label>Parsing
+              <select id="doc-parser">
+                <option value="auto">Auto — fast; OCR only if the PDF is scanned</option>
+                <option value="fast">Fast — text PDFs only (no tables / OCR)</option>
+                <option value="deep">Deep — layout, tables, OCR (slower)</option>
+              </select>
+            </label>
+            <div id="doc-docling-note" class="alert bad" hidden></div>
+            <button id="doc-upload" class="btn primary" type="button">Upload</button>
             <div id="upload-status" class="small muted" aria-live="polite"></div>
           </div>
         </section>
         <section class="card wide">
           <div class="row between"><h2>Indexed documents</h2><button id="docs-refresh" class="btn ghost" type="button">Refresh</button></div>
-          <div class="table-wrap"><table id="docs-table"><thead><tr><th>File</th><th>Access</th><th>Chunks</th><th>Uploaded by</th><th>When</th></tr></thead><tbody></tbody></table></div>
+          <div class="table-wrap"><table id="docs-table"><thead><tr><th>File</th><th>Access</th><th>Status</th><th>Pages</th><th>Parser</th><th>Chunks</th><th>Uploaded by</th><th>When</th><th></th></tr></thead><tbody></tbody></table></div>
           <p id="docs-empty" class="muted" hidden>No documents yet.</p>
         </section>
       </div>
