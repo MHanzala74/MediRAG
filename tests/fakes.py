@@ -54,3 +54,27 @@ class FakeRails:
 
     def hallucination_check(self, raw):
         return True
+
+
+class ContextEchoModel(BaseChatModel):
+    """Fake LLM for end-to-end tests: answers by quoting the [Source: …] tags found in its prompt,
+    so tests can prove which passages (file, page) reached the model."""
+    model_name: str = "gpt-4o-mini-2024-07-18"
+
+    @property
+    def _llm_type(self):
+        return "context-echo"
+
+    def _answer(self, messages) -> str:
+        import re
+        prompt = "\n".join(str(m.content) for m in messages)
+        tags = re.findall(r"\[Source: ([^\]]+)\]", prompt)
+        return "Based on the documents: " + "; ".join(tags) + "." if tags else "I could not find this in the documents."
+
+    def _generate(self, messages, stop=None, run_manager=None, **kw):
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=self._answer(messages), usage_metadata=USAGE))])
+
+    def _stream(self, messages, stop=None, run_manager=None, **kw):
+        for i, w in enumerate(self._answer(messages).split(" ")):
+            yield ChatGenerationChunk(message=AIMessageChunk(content=w if i == 0 else " " + w))
+        yield ChatGenerationChunk(message=AIMessageChunk(content="", usage_metadata=USAGE))

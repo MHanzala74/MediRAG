@@ -49,6 +49,7 @@ async def run_pipeline(
     from app.core.config import settings
     from app.guardrails.nemo_guardrails import nemo_guardrails as _global_guardrails
     from app.rag.chain import _build_prompt
+    from app.rag.context import build_context
     from app.rag.llm_router import get_llm
     from app.rag.reranker.cross_encoder import reranker
     from app.rag.retriever.hybrid_retriever import HybridRetriever
@@ -91,13 +92,14 @@ async def run_pipeline(
         if settings.use_reranker and retrieved
         else retrieved[: settings.reranker_top_n]
     )
-    context_chunks = [d.page_content for d in final_docs]
-    sources = list(dict.fromkeys(d.metadata.get("source", "unknown") for d in final_docs))
+    bundle = build_context(final_docs)                       # identical to what production sends to the LLM
+    context_chunks = bundle.parts
+    sources = [s["filename"] + (f" p.{s['page']}" if s["page"] else "") for s in bundle.sources]
 
     # ── Generation ────────────────────────────────────────────────────
     llm = get_llm()
     raw = (_build_prompt() | llm | StrOutputParser()).invoke(
-        {"context": "\n\n---\n\n".join(context_chunks), "chat_history": [], "question": query}
+        {"context": bundle.text, "chat_history": [], "question": query}
     )
 
     # ── Layer 3: output rail ──────────────────────────────────────────

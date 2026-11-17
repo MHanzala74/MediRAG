@@ -12,6 +12,8 @@ _pool: pool.ThreadedConnectionPool | None = None
 
 def init_pool():
     global _pool
+    if _pool is not None and not _pool.closed:
+        return                                   # already initialised
     try:
         _pool = pool.ThreadedConnectionPool(
             minconn=1,
@@ -41,6 +43,8 @@ def release_connection(conn):
 
 
 def close_pool():
-    if _pool:
+    global _pool
+    if _pool is not None and not _pool.closed:
         _pool.closeall()
         logger.info("PostgreSQL pool closed")
+    _pool = None
