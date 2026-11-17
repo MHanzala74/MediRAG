@@ -1,4 +1,4 @@
-.PHONY: run dev install lint test eval eval-retrieval eval-safety eval-synth docker-up docker-down help
+.PHONY: run dev install lint test test-e2e smoke eval eval-retrieval eval-safety eval-synth docker-up docker-down help
 
 help:
 	@echo "  make install      Install dependencies"
@@ -39,3 +39,9 @@ eval-synth:
 
 test:
 	pytest evaluation tests -v
+
+test-e2e:
+	pytest tests_e2e -v          # whole app: real DB + Chroma, fake LLM/embeddings
+
+smoke:
+	python scripts/smoke_test.py   # live test of a running server (see the script header)

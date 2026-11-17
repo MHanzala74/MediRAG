@@ -15,6 +15,16 @@ from app.utils.logger import logger
 _INSTALL_HINT = "Install Docling with: pip install docling   (see requirements-docling.txt)"
 
 
+def default_models_dir() -> str:
+    """DOCLING_MODELS_DIR if set; otherwise ./docling_models when it holds downloaded models
+    (what scripts/download_docling_models.py and the Docker image create); otherwise "" = Docling's own cache."""
+    from app.core.config import settings
+    if settings.docling_models_dir:
+        return settings.docling_models_dir
+    local = Path.cwd() / "docling_models"
+    return str(local) if local.is_dir() and any(local.iterdir()) else ""
+
+
 def docling_available() -> bool:
     return importlib.util.find_spec("docling") is not None
 
@@ -94,7 +104,7 @@ def parse_with_docling(path: Path, *, ocr: bool = True, tables: bool = True,
     from docling.datamodel.base_models import ConversionStatus
 
     try:
-        result = _converter(ocr, tables, models_dir, timeout_s).convert(str(path))
+        result = _converter(ocr, tables, models_dir or default_models_dir(), timeout_s).convert(str(path))
     except ParseError:
         raise
     except ModuleNotFoundError as e:                         # e.g. torch / OCR engine missing for PDFs

@@ -1,0 +1,6 @@
+# Optional: deep document parsing (layout analysis, table structure, OCR for scans/images, DOCX/PPTX/HTML/MD).
+# Heavy: pulls PyTorch + ONNX runtime (several GB). Everything runs locally — no data leaves your server.
+#   pip install -r requirements-docling.txt
+#   python scripts/download_docling_models.py      # fetch the model weights once (HuggingFace) for offline use
+# Without it MediRAG still works: text PDFs are parsed with pypdf (PARSER=fast / auto).
+docling[rapidocr]>=2.150,<3

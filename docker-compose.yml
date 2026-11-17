@@ -18,7 +18,10 @@ services:
     restart: unless-stopped
 
   api:
-    build: .
+    build:
+      context: .
+      args:
+        WITH_DOCLING: ${WITH_DOCLING:-false}   # true = deep parsing (tables, OCR, DOCX/PPTX/images); image gets much larger
     container_name: medrag-api
     ports:
       - "8000:8000"

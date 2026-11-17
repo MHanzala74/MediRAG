@@ -235,3 +235,16 @@ def test_metadata_is_chroma_safe_and_sequential():
         assert all(isinstance(v, (str, int, float, bool)) for v in c.metadata.values())   # Chroma rejects None / lists
         assert {"source", "doc_id", "role", "uploaded_by", "parser", "element_type", "section"} <= set(c.metadata)
     assert "page" not in chunks[1].metadata
+
+
+def test_default_models_dir(tmp_path, monkeypatch):
+    from app.rag.parsing.docling_parser import default_models_dir
+    monkeypatch.setattr(settings, "docling_models_dir", "")
+    monkeypatch.chdir(tmp_path)
+    assert default_models_dir() == ""                                   # nothing downloaded → Docling's own cache
+    (tmp_path / "docling_models").mkdir()
+    assert default_models_dir() == ""                                   # empty folder doesn't count
+    (tmp_path / "docling_models" / "layout").mkdir()
+    assert default_models_dir() == str(tmp_path / "docling_models")     # found automatically
+    monkeypatch.setattr(settings, "docling_models_dir", "/custom")
+    assert default_models_dir() == "/custom"                            # explicit setting wins
