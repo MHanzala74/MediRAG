@@ -34,7 +34,7 @@ STRICT RULES:
 3. Never diagnose patients or prescribe specific treatments.
 4. Never recommend stopping or changing prescribed medications.
 5. Always recommend consulting a licensed healthcare professional.
-6. Cite your sources by referencing the document filenames.
+6. Cite your sources by their document filename and page number, as shown in each [Source: …] tag.
 7. Be precise, evidence-based, and compassionate.
 
 Context documents:
@@ -123,16 +123,21 @@ async def prepare_rag(query: str, user_role: str, session_id: str) -> Prepared:
     # ── Build context + sources ───────────────────────────────────────
     context_parts, sources, seen = [], [], set()
     for doc in final_docs:
-        context_parts.append(doc.page_content)
         fname   = doc.metadata.get("source",  "unknown")
         doc_id  = doc.metadata.get("doc_id",  "")
-        preview = doc.page_content[:120].replace("\n", " ")
-        if fname not in seen:
-            seen.add(fname)
+        page    = doc.metadata.get("page")
+        section = doc.metadata.get("section") or None
+        # tag every passage so the model can cite "file, p. N"
+        tag = f"[Source: {fname}" + (f", p. {page}" if page else "") + (f", {section}" if section else "") + "]"
+        context_parts.append(f"{tag}\n{doc.page_content}")
+        if (fname, page) not in seen:
+            seen.add((fname, page))
             sources.append({
                 "filename":      fname,
                 "doc_id":        doc_id,
-                "chunk_preview": preview + "...",
+                "chunk_preview": doc.page_content[:120].replace("\n", " ") + "...",
+                "page":          page,
+                "section":       section,
             })
 
     context = "\n\n---\n".join(context_parts)

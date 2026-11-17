@@ -7,13 +7,13 @@ from psycopg2 import pool
 from app.core.config import settings
 from app.utils.logger import logger
 
-_pool: pool.SimpleConnectionPool | None = None
+_pool: pool.ThreadedConnectionPool | None = None
 
 
 def init_pool():
     global _pool
     try:
-        _pool = pool.SimpleConnectionPool(
+        _pool = pool.ThreadedConnectionPool(
             minconn=1,
             maxconn=10,
             host=settings.postgres_host,

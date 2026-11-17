@@ -49,6 +49,11 @@ def create_tables():
             );
         """)
         # ── migrations for existing databases ─────────────────────────
+        cur.execute("ALTER TABLE uploaded_docs ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ready';")  # processing | ready | failed
+        cur.execute("ALTER TABLE uploaded_docs ADD COLUMN IF NOT EXISTS error  TEXT;")
+        cur.execute("ALTER TABLE uploaded_docs ADD COLUMN IF NOT EXISTS note   TEXT;")
+        cur.execute("ALTER TABLE uploaded_docs ADD COLUMN IF NOT EXISTS pages  INT;")
+        cur.execute("ALTER TABLE uploaded_docs ADD COLUMN IF NOT EXISTS parser VARCHAR(20);")
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active  BOOLEAN NOT NULL DEFAULT TRUE;")
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;")
         # a chat session belongs to exactly one user (see claim_session)
@@ -244,25 +249,98 @@ def save_doc_metadata(doc_id: str, filename: str, role: str, uploaded_by: str, c
         release_connection(conn)
 
 
+_DOC_COLS = "doc_id, filename, role, uploaded_by, chunk_count, created_at, status, error, note, pages, parser"
+
+
+def _doc_row(r) -> dict:
+    return {"doc_id": r[0], "filename": r[1], "role": r[2], "uploaded_by": r[3], "chunk_count": r[4],
+            "created_at": str(r[5]), "status": r[6], "error": r[7], "note": r[8], "pages": r[9], "parser": r[10]}
+
+
 def list_docs(role: str | None = None) -> list[dict]:
     conn = get_connection()
     try:
         cur = conn.cursor()
         if role:
-            cur.execute(
-                "SELECT doc_id, filename, role, uploaded_by, chunk_count, created_at FROM uploaded_docs WHERE role = %s ORDER BY created_at DESC",
-                (role,)
-            )
+            cur.execute(f"SELECT {_DOC_COLS} FROM uploaded_docs WHERE role = %s ORDER BY created_at DESC", (role,))
         else:
-            cur.execute(
-                "SELECT doc_id, filename, role, uploaded_by, chunk_count, created_at FROM uploaded_docs ORDER BY created_at DESC"
-            )
+            cur.execute(f"SELECT {_DOC_COLS} FROM uploaded_docs ORDER BY created_at DESC")
         rows = cur.fetchall()
         cur.close()
-        return [
-            {"doc_id": r[0], "filename": r[1], "role": r[2],
-             "uploaded_by": r[3], "chunk_count": r[4], "created_at": str(r[5])}
-            for r in rows
-        ]
+        return [_doc_row(r) for r in rows]
+    finally:
+        release_connection(conn)
+
+
+def get_doc(doc_id: str) -> dict | None:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT {_DOC_COLS} FROM uploaded_docs WHERE doc_id = %s", (doc_id,))
+        row = cur.fetchone()
+        cur.close()
+        return _doc_row(row) if row else None
+    finally:
+        release_connection(conn)
+
+
+def create_doc_record(doc_id: str, filename: str, role: str, uploaded_by: str):
+    """Register an upload; it becomes searchable only when ingestion sets status='ready'."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO uploaded_docs (doc_id, filename, role, uploaded_by, chunk_count, status) "
+            "VALUES (%s, %s, %s, %s, 0, 'processing')", (doc_id, filename, role, uploaded_by))
+        conn.commit()
+        cur.close()
+    finally:
+        release_connection(conn)
+
+
+_UPDATABLE = {"status", "error", "note", "pages", "parser", "chunk_count"}
+
+
+def update_doc(doc_id: str, **fields):
+    bad = set(fields) - _UPDATABLE
+    if bad:
+        raise ValueError(f"Unknown document fields: {bad}")
+    if not fields:
+        return
+    sets = ", ".join(f"{k} = %s" for k in fields)
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"UPDATE uploaded_docs SET {sets} WHERE doc_id = %s", (*fields.values(), doc_id))
+        conn.commit()
+        cur.close()
+    finally:
+        release_connection(conn)
+
+
+def delete_doc_record(doc_id: str) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM uploaded_docs WHERE doc_id = %s", (doc_id,))
+        deleted = cur.rowcount > 0
+        conn.commit()
+        cur.close()
+        return deleted
+    finally:
+        release_connection(conn)
+
+
+def fail_interrupted_ingestions() -> int:
+    """After a restart no worker is running: documents still 'processing' can never finish."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE uploaded_docs SET status = 'failed', error = 'Interrupted by a server restart — delete and upload again.' "
+                    "WHERE status = 'processing'")
+        n = cur.rowcount
+        conn.commit()
+        cur.close()
+        return n
     finally:
         release_connection(conn)

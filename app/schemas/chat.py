@@ -9,6 +9,8 @@ class Source(BaseModel):
     filename: str
     doc_id: str
     chunk_preview: str
+    page: int | None = None          # first page of the cited passage (None for DOCX/HTML/Markdown)
+    section: str | None = None       # heading path, e.g. "Diabetes Guide > Symptoms"
 
 class ChatResponse(BaseModel):
     answer: str

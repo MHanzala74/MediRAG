@@ -22,9 +22,11 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 %s v%s starting [%s]", settings.app_name, settings.app_version, settings.app_env)
     try:
         from app.db.database import init_pool
-        from app.db.models import create_tables
+        from app.db.models import create_tables, fail_interrupted_ingestions
         init_pool()
         create_tables()
+        if (n := fail_interrupted_ingestions()):
+            logger.warning("%d document(s) were still being processed at the last shutdown → marked as failed", n)
     except Exception as e:
         logger.error("DB initialization failed: %s — continuing without DB", e)
 
