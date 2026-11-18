@@ -5,7 +5,7 @@
 """
 from xml.sax.saxutils import escape
 
-W, H = 1260, 995
+W, H = 1260, 1012
 FONT = "'Times New Roman', Times, 'Liberation Serif', 'Nimbus Roman', serif"
 INK = "#1a1a1a"
 
@@ -75,9 +75,9 @@ def panel(y0, y1, label, desc):
 panel(14, 200, "(a)", "Offline: document ingestion and indexing")
 ya, ha = 62, 88
 steps_a = [
-    ("PDF upload", ["admin only; role tag", "{user, admin}"], "neutral"),
-    ("Parsing", ["PyPDFLoader", "page-level text"], "neutral"),
-    ("Chunking", ["RecursiveCharacter-", "TextSplitter (600 / 120)"], "retr"),
+    ("Upload (admin)", ["PDF, DOCX, PPTX, images", "background job · status"], "neutral"),
+    ("Parsing", ["pypdf (fast) or Docling", "layout · tables · OCR"], "retr"),
+    ("Chunking", ["by section and table;", "page + heading metadata"], "retr"),
     ("Embedding", ["OpenAI text-emb-3-small", "or MiniLM-L6-v2 (HF)"], "retr"),
 ]
 xa = [50, 254, 458, 662]
@@ -94,7 +94,7 @@ txt((xa[3]) - 22, ya + ha / 2 - 6, sym("c", "i", 11), size=11)
 cx_chroma = 905
 cylinder(cx_chroma, ya - 6, 140, ha + 12, *PAL["store"])
 txt(cx_chroma, ya + 28, "ChromaDB", size=13, weight="bold")
-lines(cx_chroma, ya + 46, ["vectors + metadata", "(role, doc_id, source)"], size=10.5, lh=13)
+lines(cx_chroma, ya + 46, ["vectors + metadata", "(role, page, section)"], size=10.5, lh=13)
 arrow([(822, ya + ha / 2), (cx_chroma - 70, ya + ha / 2)])
 txt(846, ya + ha / 2 - 7, sym("e", "i", 11), size=11)
 # legend
@@ -235,7 +235,8 @@ txt(344, 596, "re-uses the components of (b)", size=11, style="italic", anchor="
 
 # ═══════════════ caption ═══════════════
 cap = [
-    '<tspan font-weight="bold">Figure 1.</tspan> Architecture of MediRAG. (a) Offline: admin-uploaded PDFs are parsed, chunked and embedded; chunks <tspan font-style="italic">c</tspan><tspan font-size="9" dy="3">i</tspan><tspan dy="-3"> </tspan>with role metadata are indexed in ChromaDB.',
+    '<tspan font-weight="bold">Figure 1.</tspan> Architecture of MediRAG. (a) Offline: admin-uploaded documents are parsed in a background job (pypdf, or Docling for layout, tables and OCR), chunked along sections and tables',
+    'with page and heading metadata (<tspan font-style="italic">c</tspan><tspan font-size="9" dy="3">i</tspan><tspan dy="-3"> </tspan>with role), embedded and indexed in ChromaDB.',
     '(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated (account and role re-checked in the database), screened by an input guardrail (G1),',
     'matched by dense retrieval re-scored with BM25 and fused with RRF, checked for context sufficiency (G2), reranked by a cross-encoder, and answered by the configured LLM',
     '(OpenAI or Groq) whose tokens are streamed to the client; output and hallucination guardrails (G3, G4) post-process the answer (the disclaimer is streamed last).',

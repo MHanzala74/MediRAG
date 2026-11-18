@@ -1,21 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="995" viewBox="0 0 1260 995" font-family="'Times New Roman', Times, 'Liberation Serif', 'Nimbus Roman', serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="1012" viewBox="0 0 1260 1012" font-family="'Times New Roman', Times, 'Liberation Serif', 'Nimbus Roman', serif">
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#222"/></marker><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#A8433A"/></marker><marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#666"/></marker></defs>
-<rect width="1260" height="995" fill="#ffffff"/>
+<rect width="1260" height="1012" fill="#ffffff"/>
 <rect x="14" y="14" width="1232" height="186" rx="8" fill="none" stroke="#9a9a9a" stroke-width="1.0" stroke-dasharray="5 4"/>
 <text x="30" y="36" font-size="14" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a"><tspan font-weight="bold">(a)</tspan></text>
 <text x="59.6" y="36" font-size="13" font-weight="normal" font-style="italic" text-anchor="start" fill="#333">Offline: document ingestion and indexing</text>
 <rect x="50" y="62" width="160" height="88" rx="5" fill="#F4F4F4" stroke="#555555" stroke-width="1.1"/>
-<text x="130" y="86" font-size="13" font-weight="bold" font-style="normal" text-anchor="middle" fill="#1a1a1a">PDF upload</text>
-<text x="130" y="109" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">admin only; role tag</text>
-<text x="130" y="123" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">{user, admin}</text>
-<rect x="254" y="62" width="160" height="88" rx="5" fill="#F4F4F4" stroke="#555555" stroke-width="1.1"/>
+<text x="130" y="86" font-size="13" font-weight="bold" font-style="normal" text-anchor="middle" fill="#1a1a1a">Upload (admin)</text>
+<text x="130" y="109" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">PDF, DOCX, PPTX, images</text>
+<text x="130" y="123" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">background job · status</text>
+<rect x="254" y="62" width="160" height="88" rx="5" fill="#E7EFF9" stroke="#35588A" stroke-width="1.1"/>
 <text x="334" y="86" font-size="13" font-weight="bold" font-style="normal" text-anchor="middle" fill="#1a1a1a">Parsing</text>
-<text x="334" y="109" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">PyPDFLoader</text>
-<text x="334" y="123" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">page-level text</text>
+<text x="334" y="109" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">pypdf (fast) or Docling</text>
+<text x="334" y="123" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">layout · tables · OCR</text>
 <rect x="458" y="62" width="160" height="88" rx="5" fill="#E7EFF9" stroke="#35588A" stroke-width="1.1"/>
 <text x="538" y="86" font-size="13" font-weight="bold" font-style="normal" text-anchor="middle" fill="#1a1a1a">Chunking</text>
-<text x="538" y="109" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">RecursiveCharacter-</text>
-<text x="538" y="123" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">TextSplitter (600 / 120)</text>
+<text x="538" y="109" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">by section and table;</text>
+<text x="538" y="123" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">page + heading metadata</text>
 <rect x="662" y="62" width="160" height="88" rx="5" fill="#E7EFF9" stroke="#35588A" stroke-width="1.1"/>
 <text x="742" y="86" font-size="13" font-weight="bold" font-style="normal" text-anchor="middle" fill="#1a1a1a">Embedding</text>
 <text x="742" y="109" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">OpenAI text-emb-3-small</text>
@@ -29,7 +29,7 @@
 <ellipse cx="905" cy="65" rx="70.0" ry="9" fill="#FFF5D6" stroke="#8F741B" stroke-width="1.1"/>
 <text x="905" y="90" font-size="13" font-weight="bold" font-style="normal" text-anchor="middle" fill="#1a1a1a">ChromaDB</text>
 <text x="905" y="108" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">vectors + metadata</text>
-<text x="905" y="121" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">(role, doc_id, source)</text>
+<text x="905" y="121" font-size="10.5" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a">(role, page, section)</text>
 <polyline points="822,106.0 835,106.0" fill="none" stroke="#222" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="846" y="99.0" font-size="11" font-weight="normal" font-style="normal" text-anchor="middle" fill="#1a1a1a"><tspan font-style="italic">e</tspan><tspan font-size="8" dy="3">i</tspan><tspan dy="-3"> </tspan></text>
 <rect x="1010" y="40" width="224" height="148" rx="4" fill="#ffffff" stroke="#9a9a9a" stroke-width="0.9"/>
@@ -220,10 +220,11 @@
 <text x="1054.0" y="687" font-size="10.5" font-weight="normal" font-style="italic" text-anchor="middle" fill="#1a1a1a">scores</text>
 <polyline points="334,556 334,620" fill="none" stroke="#666" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ag)"/>
 <text x="344" y="596" font-size="11" font-weight="normal" font-style="italic" text-anchor="start" fill="#555">re-uses the components of (b)</text>
-<text x="36" y="898" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a"><tspan font-weight="bold">Figure 1.</tspan> Architecture of MediRAG. (a) Offline: admin-uploaded PDFs are parsed, chunked and embedded; chunks <tspan font-style="italic">c</tspan><tspan font-size="9" dy="3">i</tspan><tspan dy="-3"> </tspan>with role metadata are indexed in ChromaDB.</text>
-<text x="36" y="914" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated (account and role re-checked in the database), screened by an input guardrail (G1),</text>
-<text x="36" y="930" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">matched by dense retrieval re-scored with BM25 and fused with RRF, checked for context sufficiency (G2), reranked by a cross-encoder, and answered by the configured LLM</text>
-<text x="36" y="946" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">(OpenAI or Groq) whose tokens are streamed to the client; output and hallucination guardrails (G3, G4) post-process the answer (the disclaimer is streamed last).</text>
-<text x="36" y="962" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">Tokens, latency and status of every request are logged per user for the admin usage dashboard. (c) A golden dataset is run through the same components and scored</text>
-<text x="36" y="978" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">by 14 DeepEval metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.</text>
+<text x="36" y="898" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a"><tspan font-weight="bold">Figure 1.</tspan> Architecture of MediRAG. (a) Offline: admin-uploaded documents are parsed in a background job (pypdf, or Docling for layout, tables and OCR), chunked along sections and tables</text>
+<text x="36" y="914" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">with page and heading metadata (<tspan font-style="italic">c</tspan><tspan font-size="9" dy="3">i</tspan><tspan dy="-3"> </tspan>with role), embedded and indexed in ChromaDB.</text>
+<text x="36" y="930" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">(b) Online: a query <tspan font-style="italic">q</tspan> from the web UI or API is authenticated (account and role re-checked in the database), screened by an input guardrail (G1),</text>
+<text x="36" y="946" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">matched by dense retrieval re-scored with BM25 and fused with RRF, checked for context sufficiency (G2), reranked by a cross-encoder, and answered by the configured LLM</text>
+<text x="36" y="962" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">(OpenAI or Groq) whose tokens are streamed to the client; output and hallucination guardrails (G3, G4) post-process the answer (the disclaimer is streamed last).</text>
+<text x="36" y="978" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">Tokens, latency and status of every request are logged per user for the admin usage dashboard. (c) A golden dataset is run through the same components and scored</text>
+<text x="36" y="994" font-size="12.5" font-weight="normal" font-style="normal" text-anchor="start" fill="#1a1a1a">by 14 DeepEval metrics (retrieval, generation, safety) using a judge LLM; blocked cases are scored on safety metrics only.</text>
 </svg>

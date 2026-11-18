@@ -22,6 +22,7 @@
 - [Key Features](#-key-features)
 - [API Endpoints](#-api-endpoints)
 - [Quick Start](#-quick-start)
+- [Document parsing (Docling)](#-document-parsing)
 - [How to Use MediRAG (end-to-end)](#-how-to-use-medirag-end-to-end)
 - [Docker Deployment](#-docker-deployment)
 - [Environment Variables](#-environment-variables)
@@ -50,6 +51,7 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 | Feature | Details |
 |---|---|
 | 🤖 Two LLM providers | OpenAI gpt-4o-mini **or** Groq llama-3.3-70b, chosen at startup by `PRIMARY_LLM` (Groq is used when no OpenAI key is set); no automatic runtime failover |
+| 📄 Deep document parsing | Text PDFs via pypdf; optional **Docling** adds layout analysis, table structure, OCR for scans/images and DOCX / PPTX / HTML / Markdown. Citations carry **page numbers** |
 | ⚡ Streaming answers | The chat shows the answer word by word as it is generated (Server-Sent Events), with a **Stop** button |
 | 📊 Usage dashboard | Admin sees users, requests per user, tokens and estimated LLM cost; can disable accounts |
 | 🔍 Hybrid Search | Semantic (ChromaDB) + BM25 keyword + RRF fusion |
@@ -73,7 +75,10 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 | `GET` | `/api/v1/health` | — | Health + feature flags |
 | `POST` | `/api/v1/auth/signup` | — | Register user |
 | `POST` | `/api/v1/auth/login` | — | Login → JWT token |
-| `POST` | `/api/v1/documents/upload` | Admin | Upload PDF |
+| `POST` | `/api/v1/documents/upload` | Admin | Upload a document — parsed in the background (`202`); `?wait=true` blocks until done |
+| `GET` | `/api/v1/documents/{doc_id}` | Admin | Status of one document (`processing` / `ready` / `failed`) |
+| `DELETE` | `/api/v1/documents/{doc_id}` | Admin | Delete a document and all its indexed chunks |
+| `GET` | `/api/v1/documents/capabilities` | Admin | Supported file types, parsing modes, Docling installed? |
 | `GET` | `/api/v1/documents/list` | Admin | List all documents |
 | `POST` | `/api/v1/chat/query` | User | Ask a medical question (complete answer in one JSON response) |
 | `POST` | `/api/v1/chat/stream` | User | Same, but streamed token by token (`text/event-stream`) — used by the web UI |
@@ -143,8 +148,10 @@ Open **http://localhost:8000**. The first start is slower: PostgreSQL tables are
 ### 2 · Admin workflow (prepare the knowledge base, then measure quality)
 
 1. **Sign up** → *Sign up* tab → *Account type: Admin* → enter the **admin signup code** → *Create account*.
-2. **Documents tab → Upload a document.** Pick a PDF and who may use it:
-   *Everyone* (users **and** admins can retrieve it) or *Admins only*. It is parsed, chunked and indexed.
+2. **Documents tab → Upload a document.** Pick the file, who may use it — *Everyone* (users **and** admins can
+   retrieve it) or *Admins only* — and the **parsing mode** (see *Document parsing* below). The upload returns at once; the table
+   shows **processing → ready** by itself (or **failed** with the reason). Only `ready` documents are searchable. Use **Delete** to
+   remove a document and all its chunks.
 3. **Chat tab** — ask a few questions to sanity-check the answers and the cited sources.
 4. **Usage tab** — see who is using the chatbot (see *Reading the Usage tab* below) and disable accounts if needed.
 5. **Evaluation tab** (admin only):
@@ -249,6 +256,52 @@ Admin-only calls (`/documents/upload`, `/documents/list`, `/admin/usage/*`, `/ev
 
 ---
 
+## 📄 Document parsing
+
+Upload accepts **PDF** always, and — when [Docling](https://github.com/docling-project/docling) is installed — **DOCX, PPTX, HTML,
+Markdown and images (PNG / JPG / TIFF)**. Parsing runs in a background worker (one document at a time, because OCR is
+memory-hungry), and the text is chunked **along sections and tables**: every chunk keeps its heading path and page number, tables
+stay in their own chunk as Markdown (header row repeated if a table has to be split), and answers cite `file · p.N`.
+
+| Mode | What it does | Use for |
+|---|---|---|
+| `fast` | pypdf text extraction only | text PDFs; no extra install |
+| `deep` | Docling: layout analysis, table structure, OCR | scans, tables, DOCX/PPTX/images |
+| `auto` *(default)* | pypdf first; switches to Docling **only if the PDF looks scanned** (little extractable text) and Docling is installed | mixed collections. Tables in a *text* PDF are not detected in `auto` — pick `deep` for those |
+
+Choose the mode per upload (Documents tab) or set the default with `PARSER=auto|fast|deep`. Other formats always use Docling.
+
+**Install Docling (optional, heavy — PyTorch + OCR models, everything runs locally):**
+
+```bash
+pip install -r requirements-docling.txt
+python scripts/download_docling_models.py       # one-off download of the model weights (needs internet once)
+# → set DOCLING_MODELS_DIR in .env, or leave it: ./docling_models is picked up automatically
+docker compose build --build-arg WITH_DOCLING=true     # or WITH_DOCLING=true in .env; bakes the models into the image
+```
+
+**Look before you upload** — see exactly what each parser extracts from *your* files:
+
+```bash
+python scripts/inspect_document.py report.pdf --mode fast
+python scripts/inspect_document.py report.pdf --mode deep --chunks 5
+```
+
+What parsing can and cannot do:
+- ✅ text, headings, lists, tables (as Markdown), text inside scans/images (OCR), figure captions.
+- ❌ It does not *understand* pictures or charts, and **medical images are deliberately not interpreted**. Handwriting, very poor scans and
+  complex merged-cell tables can still come out wrong — inspect important documents.
+- ⏱ Deep parsing takes seconds to minutes per document and several GB of RAM (Docling reports ~2.5 GB with the lightweight PDF
+  backend, ~6 GB with the default one — measure on your server). `DOCLING_TIMEOUT_S` (default 900) caps one document.
+- 🔒 Docling processes files locally; nothing is sent to a cloud service.
+- Tuning knobs: `DOCLING_OCR`, `DOCLING_TABLES`, `CHUNK_SIZE`, `CHUNK_OVERLAP`, `TABLE_CHUNK_SIZE`, `MAX_UPLOAD_MB`.
+
+> **Verification status:** DOCX / HTML / Markdown conversion was tested with the real Docling package, and page-numbered PDF handling
+> with a Docling-structured document. The **PDF layout / OCR models were not run in the development environment** (the model
+> downloads were unreachable). After installing Docling, run `scripts/inspect_document.py` and `scripts/smoke_test.py` on your own documents.
+
+---
+
 ## 🐳 Docker Deployment
 
 ```bash
@@ -269,6 +322,9 @@ docker compose down              # Stop
 | `JWT_SECRET_KEY` | ✅ | — | Secret for JWT signing |
 | `POSTGRES_PASSWORD` | ✅ | — | PostgreSQL password |
 | `ADMIN_SIGNUP_CODE` | ✅ (prod) | — | Code required to sign up as admin. Empty = admin signup allowed in development, **disabled** in production |
+| `PARSER` | ⬜ | `auto` | Default parsing mode: `auto` / `fast` / `deep` (see *Document parsing*) |
+| `DOCLING_MODELS_DIR` | ⬜ | `./docling_models` if present | Offline Docling model folder |
+| `MAX_UPLOAD_MB` | ⬜ | `50` | Upload size limit |
 | `PRIMARY_LLM` | ⬜ | `openai` | `openai` or `groq` |
 | `EMBEDDING_PROVIDER` | ⬜ | `openai` | `openai` or `huggingface` |
 | `USE_HYBRID_SEARCH` | ⬜ | `true` | Enable BM25 + semantic fusion |
@@ -379,6 +435,23 @@ python -m evaluation.run_eval --dataset evaluation/data/synthetic.json
 Golden record format: `id`, `input`, `expected_output`, `category`
 (`factual | safety | off_topic | crisis | out_of_kb`), `role`, `expect_block`.
 
+### Does the whole pipeline work? — three levels of testing
+
+```bash
+# 1 · Offline, no API keys (CI-friendly): real PostgreSQL + real ChromaDB + real parsing/retrieval/chain/streaming/usage code;
+#     only the LLM and the embedding model are faked.
+make test            # unit + integration            (pytest evaluation tests)
+make test-e2e        # the whole application, step by step (pytest tests_e2e)
+
+# 2 · LIVE, with your real OpenAI/Groq key (set only in the server's .env — the script never sees it):
+docker compose up --build          # or: make dev
+python scripts/smoke_test.py                              # sample PDF → parse → answer + page citations → streaming → guardrails → usage
+python scripts/smoke_test.py --pdf my.pdf --question "What is the recommended dose of X?"
+python scripts/smoke_test.py --eval                       # + a small DeepEval run (spends judge tokens)
+
+# 3 · Quality, not just plumbing: Evaluation tab → "Generate from my documents" → Run, then compare modes (fast vs deep).
+```
+
 ### Running the tests
 
 ```bash
@@ -424,7 +497,10 @@ MediRAG/
 │   │   ├── reranker/
 │   │   │   └── cross_encoder.py   # ms-marco-MiniLM reranker
 │   │   ├── chain.py               # Full RAG pipeline
-│   │   ├── ingestion.py           # PDF → chunks → ChromaDB
+│   │   ├── ingestion.py           # Upload validation + background parse → chunk → embed → ChromaDB
+│   │   ├── parsing/               # pypdf fast path, Docling deep path, auto escalation
+│   │   ├── chunking.py            # Section/table-aware chunks with page metadata
+│   │   ├── context.py             # Tagged context + citations (shared with evaluation)
 │   │   ├── llm_router.py          # OpenAI / Groq selection (config-time)
 │   │   ├── llm_usage.py           # Read token usage from LLM replies
 │   │   ├── streaming.py           # Token streaming core (output-rail aware)
@@ -449,6 +525,9 @@ MediRAG/
 │   ├── synthesize.py              # Golden set from ingested docs
 │   ├── test_rag_deepeval.py       # pytest / `deepeval test run`
 │   └── data/golden_dataset.json   # Sample golden dataset
+├── scripts/                       # smoke_test.py (live), inspect_document.py, download_docling_models.py
+├── tests_e2e/                     # whole-application pipeline test (real main.app)
+├── requirements-docling.txt       # optional deep-parsing dependencies
 ├── docs/
 │   ├── architecture.svg/.png/.pdf # Research-style architecture figure
 │   └── generate_architecture.py   # Regenerates the figure
