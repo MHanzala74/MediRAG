@@ -16,7 +16,7 @@ from langchain_core.embeddings import DeterministicFakeEmbedding
 from app.core.config import settings
 from app.db import models
 from app.rag import ingestion, parsing
-from app.rag.parsing import ParserUnavailable
+from app.rag.parsing import ParserUnavailable, docling_available
 from app.rag.retriever.hybrid_retriever import HybridRetriever
 
 # test_api_integration replaces app.api.v1.documents / app.rag.chain with stubs; this file needs the REAL ones.
@@ -119,7 +119,8 @@ def test_only_admins_can_manage_documents(stack):
 def test_capabilities(stack):
     client, tokens, *_ = stack
     c = client.get(f"{API}/documents/capabilities", headers=tokens["admin"]).json()
-    assert c["docling_installed"] is True and ".pdf" in c["extensions"] and ".docx" in c["extensions"]
+    assert c["docling_installed"] is docling_available() and ".pdf" in c["extensions"]
+    assert (".docx" in c["extensions"]) is docling_available()                      # other formats only with Docling
     assert c["modes"] == ["auto", "fast", "deep"] and c["max_upload_mb"] == settings.max_upload_mb
 
 
@@ -152,6 +153,7 @@ def test_upload_returns_immediately_and_finishes_in_background(stack):
     assert len(chunks_of(store, r.json()["doc_id"])["ids"]) == 1
 
 
+@pytest.mark.skipif(not docling_available(), reason="Docling not installed (uv sync --extra docling)")
 def test_docx_goes_through_real_docling_with_table_chunk(stack):
     client, tokens, store, _ = stack
     r = upload(client, tokens, "guide.docx", docx_bytes())
@@ -189,7 +191,7 @@ def test_scanned_pdf_is_escalated_to_deep_in_auto_mode(stack, monkeypatch):
     ("virus.exe", b"MZ....", 400, "Unsupported file type"),
     ("fake.pdf", b"just some text, not a pdf", 400, "does not look like"),
     ("empty.pdf", b"", 400, "empty"),
-    ("notes.png", b"%PDF-1.4", 400, "does not look like"),
+    ("notes.png", b"%PDF-1.4", 400, "does not look like" if docling_available() else "Unsupported file type"),
 ])
 def test_bad_uploads_are_rejected(stack, name, data, status, fragment):
     client, tokens, *_ = stack

@@ -77,6 +77,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        env_ignore_empty=True,          # `KEY=` (blank) in .env means "use the default", never a parse error
         extra="ignore",
     )
 

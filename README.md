@@ -100,23 +100,64 @@ RAG Medical Assistant is a production-ready Retrieval-Augmented Generation syste
 ## ⚡ Quick Start
 
 ### Prerequisites
-- Python 3.11+
-- PostgreSQL (or use Docker)
-- API keys: [OpenAI](https://platform.openai.com/api-keys) or [Groq](https://console.groq.com)
+- **Git** and **[uv](https://docs.astral.sh/uv/)** (`pip install uv`, or the installer from the uv docs). uv also downloads **Python 3.13** for you (see `.python-version`).
+- **PostgreSQL 14+** — or Docker, to run it in one line (below).
+- An LLM key: [OpenAI](https://platform.openai.com/api-keys) or [Groq](https://console.groq.com).
 
 ```bash
+# 1 · get the code
 git clone https://github.com/MHanzala74/MediRAG.git
 cd MediRAG
 
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+# 2 · create the environment from the lock file  (first run downloads several GB: PyTorch, models' libraries)
+uv sync --group dev                 # app + test tools
+# uv sync --group dev --extra docling   # + deep document parsing (scans, tables, DOCX/PPTX/images) — optional, heavy
 
-cp .env.example .env   # Fill in your API keys
+# 3 · PostgreSQL (skip if you already have one)
+docker run -d --name medirag-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=medical_rag -p 5432:5432 postgres:16
 
-make dev               # Start with auto-reload
+# 4 · configuration
+cp .env.example .env                # Windows PowerShell:  Copy-Item .env.example .env
+uv run python -c "import secrets; print(secrets.token_hex(32))"      # → paste as JWT_SECRET_KEY
+```
+
+Edit `.env` — the values you must set:
+
+| Key | Value |
+|---|---|
+| `OPENAI_API_KEY` | your key (or set `PRIMARY_LLM=groq`, `GROQ_API_KEY=…`, `EMBEDDING_PROVIDER=huggingface`) |
+| `JWT_SECRET_KEY` | the random string generated above |
+| `POSTGRES_PASSWORD` | `postgres` if you used the Docker command above |
+| `ADMIN_SIGNUP_CODE` | any secret code — needed to create the first **admin** account |
+
+```bash
+# 5 · run
+uv run uvicorn main:app --reload
 ```
 
 Web UI at **http://localhost:8000** (redirects to `/ui/`) · API docs at **http://localhost:8000/docs**
+First start is slower if you use `EMBEDDING_PROVIDER=huggingface` (the embedding and reranker models are downloaded once).
+
+### First use (2 minutes)
+1. Open http://localhost:8000 → **Sign up** → *Account type: Admin* → enter your `ADMIN_SIGNUP_CODE`.
+2. **Documents** tab → upload a PDF → wait for **ready**.
+3. **Chat** tab → ask a question about it. Then **Usage** and **Evaluation** tabs (admin only).
+4. A second account (*User*) sees only the Chat tab.
+
+### Check that everything works
+```bash
+uv run pytest                      # unit + integration, offline, no API keys (needs PostgreSQL from .env; DB tests skip if unreachable)
+uv run pytest tests_e2e            # the whole application, step by step (real DB + ChromaDB; fake LLM/embeddings)
+
+# with the server running and your real key in .env — checks the live pipeline over HTTP:
+uv run python scripts/smoke_test.py                                   # sample PDF
+uv run python scripts/smoke_test.py --admin-code "<ADMIN_SIGNUP_CODE>" --pdf my.pdf --question "…?"
+uv run python scripts/smoke_test.py --admin-code "<ADMIN_SIGNUP_CODE>" --eval     # + a small DeepEval run
+
+uv run python scripts/inspect_document.py my.pdf --mode fast          # what does the parser extract from MY file?
+```
+The offline tests create throw-away databases on the PostgreSQL server from `.env` (user needs the right to `CREATE DATABASE`; the Docker `postgres` user has it).
+Browser (UI) tests: `cd tests/ui && npm install jsdom` — see the header of `tests/ui/e2e_server.py`.
 
 ---
 
