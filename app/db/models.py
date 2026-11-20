@@ -58,6 +58,26 @@ def create_tables():
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;")
         # a chat session belongs to exactly one user (see claim_session)
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_chat_sessions_session_id ON chat_sessions(session_id);")
+        # ── admin-managed runtime configuration (models, API keys, retrieval knobs) ──
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS app_config (
+                key        VARCHAR(100) PRIMARY KEY,
+                value      TEXT NOT NULL,                   -- JSON; API keys are Fernet-encrypted ("enc:v1:…")
+                is_secret  BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_by VARCHAR(100),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS config_audit (
+                id        BIGSERIAL PRIMARY KEY,
+                at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                username  VARCHAR(100) NOT NULL,
+                key       VARCHAR(100) NOT NULL,
+                old_value TEXT,                              -- secrets are logged as "set" / "not set" only
+                new_value TEXT
+            );
+        """)
         # ── per-request usage log (metadata only — never the question/answer text) ──
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usage_logs (

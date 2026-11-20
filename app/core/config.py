@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     # Optional flat price override (USD per 1M tokens) used for the dashboard's cost ESTIMATE.
     llm_price_input_per_1m:  float | None = None
     llm_price_output_per_1m: float | None = None
+    llm_temperature: float = 0.0           # 0 = deterministic (recommended for medical answers)
+    llm_max_tokens:  int   = 1500
+    openai_base_url: str   = ""            # OpenAI-compatible endpoint (Azure, vLLM, Ollama, proxy…); empty = api.openai.com
+    eval_judge_provider: str = ""          # evaluation judge: "" = same provider as the chat model
+    eval_judge_model:    str = ""          # "" = same model as the chat model
+    # Master key for API keys stored in the database (admin Settings). Empty → derived from JWT_SECRET_KEY.
+    settings_encryption_key: str = ""
     primary_llm: Literal["openai", "groq"] = "openai"
     openai_model: str    = "gpt-4o-mini"
     groq_model: str      = "llama-3.3-70b-versatile"
